@@ -9,8 +9,9 @@ import UIKit
 extension Cidaas {
 
     /// Entry point for fluent browser sign-in / sign-out (see ``CidaasWebAuthBuilder``).
-    public static func webAuth() -> CidaasWebAuthBuilder {
-        CidaasWebAuthBuilder()
+    /// - Parameter delegate: View controller used to present the system browser / auth UI.
+    public static func webAuth(delegate: UIViewController) -> CidaasWebAuthBuilder {
+        CidaasWebAuthBuilder(delegate: delegate)
     }
 }
 
@@ -24,9 +25,11 @@ public final class CidaasWebAuthBuilder {
 
     private var sessionKind: WebAuthSessionKind = .login
     private var extraParameters: [String: String] = [:]
-    private weak var presentingViewController: UIViewController?
+    private weak var delegateViewController: UIViewController?
 
-    public init() {}
+    public init(delegate: UIViewController) {
+        delegateViewController = delegate
+    }
 
     @discardableResult
     public func parameters(_ params: [String: String]) -> Self {
@@ -46,16 +49,13 @@ public final class CidaasWebAuthBuilder {
         return self
     }
 
-    @discardableResult
-    public func presenting(from viewController: UIViewController) -> Self {
-        presentingViewController = viewController
-        return self
-    }
+    private static let missingDelegateMessage =
+        "Pass a live UIViewController to webAuth(delegate:). The reference was missing or deallocated before sign-in or sign-out."
 
     public func signIn(completion: @escaping (Result<LoginResponseEntity>) -> Void) {
-        guard let viewController = presentingViewController else {
+        guard let viewController = delegateViewController else {
             let error = WebAuthError.shared.propertyMissingException()
-            error.errorMessage = "presenting(from:) is required before signIn(completion:)"
+            error.errorMessage = Self.missingDelegateMessage
             DispatchQueue.main.async {
                 completion(.failure(error: error))
             }
@@ -101,55 +101,35 @@ public final class CidaasWebAuthBuilder {
         }
     }
 
-    public func signOut(completion: @escaping (Result<Bool>) -> Void) {
-        guard let viewController = presentingViewController else {
+    public func signOut(sub: String, completion: @escaping (Result<Bool>) -> Void) {
+        guard let viewController = delegateViewController else {
             let error = WebAuthError.shared.propertyMissingException()
-            error.errorMessage = "presenting(from:) is required before signOut(completion:)"
+            error.errorMessage = Self.missingDelegateMessage
             DispatchQueue.main.async {
                 completion(.failure(error: error))
             }
             return
         }
-        let shared = AccessTokenModel.shared
-        let sub = shared.sub
-        let model = sub.isEmpty ? shared : DBHelper.shared.getAccessToken(key: sub)
-
-        EntityToModelConverter.shared.accessTokenModelToAccessTokenEntity(accessTokenModel: model) { accessTokenEntity in
-            let accessToken = accessTokenEntity.access_token
-            let entitySub = accessTokenEntity.sub
-
-            if !accessToken.isEmpty {
-                BrowserAuthPerform.startLogout(
-                    presentingFrom: viewController,
-                    accessToken: accessToken,
-                    completion: completion
-                )
-            } else if !sub.isEmpty {
-                BrowserAuthPerform.startLogout(
-                    presentingFrom: viewController,
-                    sub: sub,
-                    completion: completion
-                )
-            } else if !entitySub.isEmpty {
-                BrowserAuthPerform.startLogout(
-                    presentingFrom: viewController,
-                    sub: entitySub,
-                    completion: completion
-                )
-            } else {
-                let error = WebAuthError.shared.propertyMissingException()
-                error.errorMessage = "No access token or sub in session; complete a login before browser sign-out."
-                DispatchQueue.main.async {
-                    completion(.failure(error: error))
-                }
+        let trimmedSub = sub.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSub.isEmpty else {
+            let error = WebAuthError.shared.propertyMissingException()
+            error.errorMessage = "signOut(sub:) requires a non-empty sub."
+            DispatchQueue.main.async {
+                completion(.failure(error: error))
             }
+            return
         }
+        BrowserAuthPerform.startLogout(
+            presentingFrom: viewController,
+            sub: trimmedSub,
+            completion: completion
+        )
     }
 
     @available(iOS 13.0, *)
-    public func signOut() async throws -> Bool {
+    public func signOut(sub: String) async throws -> Bool {
         try await withCheckedThrowingContinuation { continuation in
-            signOut { result in
+            signOut(sub: sub) { result in
                 continuation.resume(with: result.cidaasBoolToSwiftResult())
             }
         }
