@@ -8,9 +8,9 @@ import UIKit
 
 extension Cidaas {
 
-    /// Entry point for fluent browser sign-in / sign-out (see ``CidaasWebAuthBuilder``).
+    /// Fluent browser sign-in / sign-out (see ``CidaasWebAuthBuilder``). Call on ``Cidaas/shared``, e.g. `Cidaas.shared.webAuth(delegate: self)`.
     /// - Parameter delegate: View controller used to present the system browser / auth UI.
-    public static func webAuth(delegate: UIViewController) -> CidaasWebAuthBuilder {
+    public func webAuth(delegate: UIViewController) -> CidaasWebAuthBuilder {
         CidaasWebAuthBuilder(delegate: delegate)
     }
 }
@@ -24,7 +24,7 @@ private enum WebAuthSessionKind {
 public final class CidaasWebAuthBuilder {
 
     private var sessionKind: WebAuthSessionKind = .login
-    private var extraParameters: [String: String] = [:]
+    private var storedExtraParameters: [String: String] = [:]
     private weak var delegateViewController: UIViewController?
 
     public init(delegate: UIViewController) {
@@ -32,8 +32,8 @@ public final class CidaasWebAuthBuilder {
     }
 
     @discardableResult
-    public func parameters(_ params: [String: String]) -> Self {
-        extraParameters = params
+    public func extraParameters(_ params: [String: String]) -> Self {
+        storedExtraParameters = params
         return self
     }
 
@@ -50,7 +50,7 @@ public final class CidaasWebAuthBuilder {
     }
 
     private static let missingDelegateMessage =
-        "Pass a live UIViewController to webAuth(delegate:). The reference was missing or deallocated before sign-in or sign-out."
+        "Pass a live UIViewController to Cidaas.shared.webAuth(delegate:). The reference was missing or deallocated before sign-in or sign-out."
 
     public func signIn(completion: @escaping (Result<LoginResponseEntity>) -> Void) {
         guard let viewController = delegateViewController else {
@@ -65,13 +65,13 @@ public final class CidaasWebAuthBuilder {
         case .login:
             BrowserAuthPerform.startLogin(
                 presentingFrom: viewController,
-                extraParameters: extraParameters,
+                extraParameters: storedExtraParameters,
                 completion: completion
             )
         case .registration:
             BrowserAuthPerform.startRegistration(
                 presentingFrom: viewController,
-                extraParameters: extraParameters,
+                extraParameters: storedExtraParameters,
                 completion: completion
             )
         case .social(let provider, let requestId):
