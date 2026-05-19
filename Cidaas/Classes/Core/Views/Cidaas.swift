@@ -64,24 +64,8 @@ public class Cidaas {
     public init(storage : TransactionStore = TransactionStore.shared) {
         // set device info in local
         deviceInfo = DeviceInfoModel()
-        
-        // check device id in keychain
-        if let sdk_device_id = KeychainWrapper.standard.string(forKey: "cidaas_sdk_device_id") {
-            // log device id
-            let loggerMessage = "Device Id in Keychain : " + sdk_device_id
-            logw(loggerMessage, cname: "cidaas-sdk-info-log")
-            
-            deviceInfo.deviceId = sdk_device_id
-        }
-        else {
-            // save device id
-            let sdk_device_id = UIDevice.current.identifierForVendor?.uuidString ?? ""
-            _ = KeychainWrapper.standard.set(sdk_device_id, forKey: "cidaas_sdk_device_id")
-            let loggerMessage = "Device Id after saving in Keychain : " + sdk_device_id
-            logw(loggerMessage, cname: "cidaas-sdk-info-log")
-            
-            deviceInfo.deviceId = sdk_device_id
-        }
+        deviceInfo.deviceId = SDKDeviceIdResolver.resolve(persistToDBHelper: false)
+        logw("Device Id : " + deviceInfo.deviceId, cname: "cidaas-sdk-info-log")
         deviceInfo.deviceMake = "Apple"
         let deviceHelper = DeviceHelper()
         deviceInfo.deviceModel = String(describing: deviceHelper.hardware())

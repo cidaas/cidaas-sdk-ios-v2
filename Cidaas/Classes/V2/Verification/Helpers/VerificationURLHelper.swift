@@ -30,7 +30,9 @@ public class VerificationURLHelper {
     public var timeLineURL: String = "/verification-srv/v2/device/mfa/timeline"
     public var listURL: String = "/verification-srv/v2/manage/mfa/device/list"
     public var cancelURL: String = "/verification-srv/v2/setup/cancel/"
-    
+    public var deviceRegistrationInitiationURL: String = "/verification-actions-srv/devices/registration/initiation"
+    public var deviceRegistrationVerificationURL: String = "/verification-actions-srv/devices/registration/verification"
+
     public func getSetupURL(verificationType: String) -> String {
         return setupURL + verificationType
     }
@@ -105,6 +107,14 @@ public class VerificationURLHelper {
     
     public func getCancelURL(verificationType: String) -> String {
         return cancelURL + verificationType
+    }
+
+    public func getDeviceRegistrationInitiationURL() -> String {
+        return deviceRegistrationInitiationURL
+    }
+
+    public func getDeviceRegistrationVerificationURL() -> String {
+        return deviceRegistrationVerificationURL
     }
 
 }
