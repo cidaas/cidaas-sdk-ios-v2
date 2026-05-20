@@ -59,7 +59,15 @@ public class Cidaas {
         }
     }
 
-    
+    /// When `true`, ``SessionManager`` adds a `DPoP` proof header to outgoing requests (iOS 14+).
+    public var useDpop: Bool = false
+
+    /// When `true`, ``SessionManager`` adds a `Biometric` proof header (may prompt Face ID / Touch ID; iOS 14+).
+    public var useBiometric: Bool = false
+
+    /// Localized reason shown when ``useBiometric`` triggers a biometric prompt.
+    public var biometricProofLocalizedReason: String = "Verify your identity"
+
     // constructor
     public init(storage : TransactionStore = TransactionStore.shared) {
         // set device info in local
