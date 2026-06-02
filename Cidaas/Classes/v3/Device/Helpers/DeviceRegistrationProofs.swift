@@ -17,12 +17,13 @@ enum DeviceRegistrationProofs {
     static func prepareVerificationRequest(
         verificationURLString: String,
         sessionId: String,
-        attestationObject: Data,
-        appAttestKeyId: String,
+        attestation: String,
+        keyId: String,
         appVersion: String,
         platform: String
     ) throws -> PreparedVerificationRequest {
-        let keyIdB64 = try DeviceRegistrationChallengeB64.standardBase64KeyId(fromAppleKeyId: appAttestKeyId)
+        let attestationValue = attestation.trimmingCharacters(in: .whitespacesAndNewlines)
+        let keyIdB64 = keyId.trimmingCharacters(in: .whitespacesAndNewlines)
         let biometricReason = "Verify your identity to register this device"
         let extraHeaders = try CidaasHTTPProof.proofHeaders(
             urlString: verificationURLString,
@@ -46,7 +47,7 @@ enum DeviceRegistrationProofs {
 
         let bodyParams: [String: Any] = [
             "session_id": sessionId.lowercased(),
-            "attestation": attestationObject.base64EncodedString(),
+            "attestation": attestationValue,
             "key_id": keyIdB64,
             "app_version": appVersion,
             "platform": platform,

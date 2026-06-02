@@ -5,14 +5,37 @@
 
 import Foundation
 
+/// Attestation provider returned by the device registration initiate API.
+public enum DeviceRegistrationProvider: Equatable {
+    case apple
+    case firebase
+    case unknown(String)
+
+    init(apiValue: String?) {
+        let normalized = (apiValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
+        case "apple":
+            self = .apple
+        case "firebase":
+            self = .firebase
+        case "":
+            self = .apple
+        default:
+            self = .unknown(normalized)
+        }
+    }
+}
+
 /// Session and nonce returned from the initiate step (used internally between steps).
 public struct DeviceRegistrationInitiateResult {
     public let sessionId: String
     public let nonce: String
+    public let provider: DeviceRegistrationProvider
 
-    public init(sessionId: String, nonce: String) {
+    public init(sessionId: String, nonce: String, provider: DeviceRegistrationProvider) {
         self.sessionId = sessionId
         self.nonce = nonce
+        self.provider = provider
     }
 }
 
@@ -33,6 +56,7 @@ final class DeviceRegistrationInitiateAPIResponse: Codable {
 struct DeviceRegistrationInitiateDataResponse: Codable {
     let session_id: String
     let nonce: String
+    let provider: String?
 }
 
 /// Registered device id returned to the app on success.
