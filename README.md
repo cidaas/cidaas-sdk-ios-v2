@@ -1,237 +1,465 @@
-![Logo](https://raw.githubusercontent.com/Cidaas/cidaas-sdk-ios-v2/master/logo.jpg)
+# Cidaas iOS SDK v3 Module Guide
 
-## About cidaas:
-[cidaas](https://www.cidaas.com)
- is a fast and secure Cloud Identity & Access Management solution that standardises what’s important and simplifies what’s complex.
+This document covers only `Cidaas/Classes/v3/` and is intended for app developers integrating the v3 API surface.
 
-## Feature set includes:
-* Single Sign On (SSO) based on OAuth 2.0, OpenID Connect, SAML 2.0 
-* Multi-Factor-Authentication with more than 14 authentication methods, including TOTP and FIDO2 
-* Passwordless Authentication 
-* Social Login (e.g. Facebook, Google, LinkedIn and more) as well as Enterprise Identity Provider (e.g. SAML or AD) 
-* Security in Machine-to-Machine (M2M) and IoT
+## Quick Start
 
-# Cidaas SDK for IOS V2
-[![Platform](https://img.shields.io/badge/Platforms-iOS-4E4E4E.svg?colorA=28a745)](#installation)
+### 1) Install and import
 
-The steps here will guide you through setting up and managing authentication and authorization in your apps using cidaas SDK.
+Use Swift Package Manager and add the `Cidaas` package to your app target, then:
 
-## Table of Contents
-
-<!--ts-->
-* [Installation](#installation)
-* [Getting started](#getting-started)
-* [Migrating to Cidaas V3](#migrating-to-cidaas-v3)
-* [Getting Client Id and urls](#getting-client-id-and-urls)
-* [Usage](#usage)
-    <!--ts-->
-    * [Native Browser Login](#native-browser-login)
-        <!--ts-->
-        * [Classic Login](#classic-login)
-        * [Social Login](#social-login)
-        <!--te-->
-    * [Embedded Browser Integration](#wkwebview-integration)
-    * [Native UI Integration](PureNativeLogin.md)
-    * [Verification Integration](Passwordless.md)
-    <!--te-->
-
-
-#### Installation
-
-#### Swift Package Manager
-
-Open the following menu item in Xcode:
-
-**File > Add Packages...**
-
-In the **Search or Enter Package URL** search box enter this URL: 
-
-```text
-https://github.com/Cidaas/cidaas-sdk-ios-v2
+```swift
+import Cidaas
 ```
 
-Then, select the dependency rule and press **Add Package**.
+### 2) Add required config
 
-
-#### Cocoapods
-
-Add the following line to your `Podfile`:
-
-```
-pod 'Cidaas'
-```
-
-To use only core functionality and to reduce the size of the dependency
-
-```
-pod 'Cidaas/Core'
-```
-
-#### Getting started
-
-The following steps are to be followed to use this cidaas SDK.
-
-Create a plist file named <b>Cidaas.plist</b> and fill all the inputs in key value pair. The inputs are mentioned below.
-
-A sample plist file would look like this :
+Add `Cidaas.plist` to your app bundle with at least:
 
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-    <dict>
-        <key>DomainURL</key>
-        <string>Your Domain URL</string>
-        <key>RedirectURL</key>
-        <string>Your redirect url</string>
-        <key>ClientId</key>
-        <string>Your client id</string>
-        <key>CidaasVersion</key>
-        <string>Your instances major Cidaas Version</string>
-    </dict>
-</plist>
+<key>DomainURL</key>
+<string>https://your-cidaas-domain</string>
+<key>ClientId</key>
+<string>your-client-id</string>
+<key>RedirectURL</key>
+<string>your-app://callback</string>
 ```
 
-## Migrating to Cidaas V3
+### 3) Platform and availability
 
-Cidaas V3 has response handling adjustment on some of the cidaas service calls. To migrate to cidaas V3, you need to do the following:
+- Package deployment target: iOS 11+
+- `async/await` convenience APIs: iOS 13+
+- Device registration API (`Cidaas.device()`): iOS 14+
 
-* Ensure that you use at least cidaas version: 3.97.0. You can find the cidaas version from cidaas service portal, and ask our customer service if it needs to be updated.
-* Ensure that you use at least cidaas-ios-sdk version: 1.3.2
-* add CidaasVersion  to <b>Cidaas.plist</b>
+---
 
-For Example:
+## Module Overview
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-    <dict>
-        <key>DomainURL</key>
-        <string>Your Domain URL</string>
-        <key>RedirectURL</key>
-        <string>Your redirect url</string>
-        <key>ClientId</key>
-        <string>Your client id</string>
-        <key>CidaasVersion</key>
-        <string>3</string>
-    </dict>
-</plist>
-```
+v3 exposes these public entry points:
 
-The following sections will help you to generate some of the information that is needed for plist.
+- `Cidaas.shared.webAuth(delegate:)` -> `CidaasWebAuthBuilder`
+- `Cidaas.WebAuth` static helpers (`handleRedirect`, `authorizationURL`)
+- `Cidaas.users()` -> `CidaasUsersBuilder`
+- `Cidaas.mfa(_:)` -> `CidaasMFABuilder`
+- `Cidaas.device()` -> `CidaasDevice`
 
-#### Getting Client Id and urls
-When you are integrating your own Business App with, you may want to modularize the interactions and attributes. There are  like Scope, Roles, Grant-Types, re-direct URLs etc., that you may want to group into one configuration/settings. This can be done by creating  App or Client.
+---
 
+## Builder Pattern in v3
 
-#### Initialization
+### BrowserAuth builder flow
 
-The first step to integrate cidaas sdk is the initialization process.
+1. Create builder with presenter: `Cidaas.shared.webAuth(delegate:)`
+2. Optional configuration:
+   - `extraParameters(_:)`
+   - `registration()`
+   - `social(provider:requestId:)`
+3. Execute terminal method:
+   - `signIn(...)`
+   - `signOut(sub:...)`
+
+### MFA builder flow
+
+1. Create root builder: `Cidaas.mfa(.totp)` (or `.push`, `.pattern`, etc.)
+2. Choose branch:
+   - `enrollment()`
+   - `authentication()`
+   - `support()`
+3. Execute branch methods.
+
+The MFA builders cache intermediate values (`sub`, `exchangeId`, etc.) to reduce parameter repetition across a flow.
+
+### Users builder flow
+
+`Cidaas.users()` is a facade-style builder:
+- password reset actions
+- account verification actions
+- user info fetch methods
+
+### Device API flow
+
+`Cidaas.device().registerDevice(...)` is a single high-level flow that internally performs:
+- initiation request
+- App Attest proof creation
+- verification request
+
+---
+
+## Public API Reference
+
+## Browser Authentication (`CidaasWebAuthBuilder`)
+
+### Entry point
 
 ```swift
-var cidaas = Cidaas();
-```
-or use the shared instance
-
-```swift
-var cidaas = Cidaas.shared
+let webAuth = Cidaas.shared.webAuth(delegate: self)
 ```
 
-#### Usage
+- **Required**: `delegate` (`UIViewController`) used to present system browser auth UI.
+- **Failure**: if the delegate is deallocated before execution, completion returns failure.
 
-#### Native Browser Login 
-#### Classic Login
-You can login using your native browser and you will be redirected to the App after successful login. To login with your native browser call ****loginWithBrowser()****.
+### Configuration methods
+
+`extraParameters(_ params: [String: String]) -> Self`
+- **Optional**
+- Default: empty dictionary
+- Applies to login and registration URL construction.
+
+`registration() -> Self`
+- **Optional**
+- Default mode is login if neither `registration()` nor `social(...)` is called.
+
+`social(provider: String, requestId: String) -> Self`
+- **Optional**
+- Both parameters must be non-empty.
+
+### Terminal methods
+
+`signIn(completion:)`
+- Returns `Result<LoginResponseEntity>`
+- Uses configured mode (login, registration, or social)
+
+`signIn() async throws -> LoginResponseEntity` (iOS 13+)
+
+`signOut(sub:completion:)`
+- **Required**: non-empty `sub`
+- Returns `Result<Bool>`
+
+`signOut(sub:) async throws -> Bool` (iOS 13+)
+
+### Static helpers (`Cidaas.WebAuth`)
+
+`handleRedirect(_ url: URL)`
+- Pass callback URL from app/scene delegate when needed.
+
+`authorizationURL(for:extraParameters:completion:)`
+`authorizationURL(for:extraParameters:) async throws -> URL` (iOS 13+)
+- Useful when you need URL preview or custom browser handling.
+- For `.social`, `extraParameters["provider"]` and `extraParameters["requestId"]` are required.
+
+### Completion-handler example
 
 ```swift
-var extraParams = Dictionary<String, String>()
-extraParams[scopes]="offline_access phone"
-cidaas.loginWithBrowser(delegate: self, extraParams: extraParams) {
-    switch $0 {
-        case .success(let successResponse):
-            // your success code here
-            break
-        case .failure(let error):
-            // your failure code here
-            break
+Cidaas.shared
+    .webAuth(delegate: self)
+    .extraParameters(["prompt": "login", "ui_locales": "en"])
+    .signIn { result in
+        switch result {
+        case .success(result: let login):
+            print("Access token: \(login.access_token)")
+        case .failure(error: let error):
+            print("Login failed: \(error.localizedDescription)")
+        }
+    }
+```
+
+### Async/await example
+
+```swift
+@available(iOS 13.0, *)
+func performLogin() async {
+    do {
+        let login = try await Cidaas.shared
+            .webAuth(delegate: self)
+            .registration()
+            .signIn()
+        print("Login success: \(login.access_token)")
+    } catch {
+        print("Login failed: \(error.localizedDescription)")
     }
 }
 ```
 
-#### Social Login
-You can also perform social login using your native browser and you will be redirected to the App after successful login. To perform social login call ****loginWithSocial()****.
+---
+
+## User Accounts (`CidaasUsersBuilder`)
+
+### Entry point
 
 ```swift
-cidaas.loginWithSocial(provider: "your_social_provider", delegate: self) { 
-    switch $0 {
-        case .success(let successResponse):
-            // your success code here
-            break
-        case .failure(let error):
-            // your failure code here
-            break
+let users = Cidaas.users()
+```
+
+### Password reset
+
+`passwordReset(_:completion:)`
+`passwordReset(_:) async throws` (iOS 13+)
+
+Input enum:
+- `.initiate(InitiateResetPasswordEntity)`
+- `.validate(HandleResetPasswordEntity)`
+- `.accept(ResetPasswordEntity)`
+
+Output enum:
+- `CidaasPasswordResetOutcome.initiate(...)`
+- `CidaasPasswordResetOutcome.validate(...)`
+- `CidaasPasswordResetOutcome.accept(...)`
+
+### Account verification
+
+`accountVerification(_:completion:)`
+`accountVerification(_:) async throws` (iOS 13+)
+
+Input enum:
+- `.initiate(InitiateAccountVerificationEntity)`
+- `.validate(VerifyAccountEntity)`
+
+Output enum:
+- `CidaasAccountVerificationOutcome.initiate(...)`
+- `CidaasAccountVerificationOutcome.validate(...)`
+
+### User info
+
+`fetchUserInfo(sub:completion:)`
+`fetchUserInfo(sub:) async throws` (iOS 13+)
+
+`fetchUserInfo(accessToken:completion:)`
+`fetchUserInfo(accessToken:) async throws` (iOS 13+)
+
+### Example
+
+```swift
+Cidaas.users().fetchUserInfo(sub: "user-sub") { result in
+    switch result {
+    case .success(result: let userInfo):
+        print("Email: \(userInfo.email)")
+    case .failure(error: let error):
+        print("UserInfo failed: \(error.localizedDescription)")
     }
 }
 ```
-where social provider may be either facebook, google, linkedin or any other providers
 
-Use [customScheme](https://developer.apple.com/documentation/uikit/core_app/communicating_with_other_apps_using_custom_urls#2928963) or [universalLinks](https://developer.apple.com/library/content/documentation/General/Conceptual/AppSearch/UniversalLinks.html) to return back the control from browser to App.
+---
 
-    Note : Don't forget to add the custom scheme url in your App's redirect url section
+## MFA (`CidaasMFABuilder`)
 
-## WKWebview integration
-
-Drag and drop an empty view in the storyboard
-
-Change the name of the class in the properties window as **CidaasView**
-
-Create an IBOutlet for the class and consider this as an object
+### Entry point
 
 ```swift
-@IBOutlet var cidaasView: CidaasView! 
+let mfa = Cidaas.mfa(.totp)
 ```
 
-Inherit the WKNavigationDelegate and call the methods
+Verification types:
+- `.pattern`, `.push`, `.touchId`, `.totp`, `.face`, `.voice`, `.email`, `.sms`, `.ivr`, `.backupCode`
+
+### Root builder methods
+
+`enrollment() -> CidaasMFAEnrollmentBuilder`
+
+`authentication() -> CidaasMFAAuthenticationBuilder`
+
+`support() -> CidaasMFASupportBuilder`
+
+`configurations(sub: String? = nil, completion: ...)`
+- `sub` optional; if omitted, builder uses cached `sub` from previous initiation call.
+- Fails if neither explicit nor cached `sub` is available.
+
+### Enrollment builder methods
+
+`initiation(accessToken: String = "", sub: String = "", completion: ...)`
+- At least one of `accessToken` or `sub` must be non-empty.
+- Caches returned identifiers for subsequent calls.
+
+`scanned(sub: String? = nil, exchangeId: String? = nil, completion: ...)`
+- Uses cached values if omitted.
+
+`verification(exchangeId: String? = nil, otp: String? = nil, pattern: String? = nil, pushNumber: String? = nil, photo: UIImage = UIImage(), voice: Data = Data(), attempt: Int = 0, localizedReason: String = "Authenticate", completion: ...)`
+- `exchangeId` required (directly or via cache).
+- `pushNumber` required for PUSH.
+- `otp/pattern` required for most non-biometric types.
+
+### Authentication builder methods
+
+`initiation(sub:requestId:usageType:completion:)`
+- All parameters required and non-empty.
+
+`verification(exchangeId: String? = nil, otp: String? = nil, pattern: String? = nil, pushNumber: String? = nil, requestId: String? = nil, usageType: String? = nil, photo: UIImage = UIImage(), voice: Data = Data(), attempt: Int = 0, localizedReason: String = "Authenticate", completion: ...)`
+- Uses cached values where possible.
+
+`pushAcknowledge(exchangeId:completion:)`
+
+`pushAllow(exchangeId:completion:)`
+
+`pushReject(exchangeId:reason: String = "", completion:)`
+
+### Support builder methods
+
+Includes:
+- `deleteAll`, `delete`
+- `pendingNotifications`, `history`
+- `updateFCM(pushId:)`, `updateFCMToken(...)`
+- `passwordlessContinue(...)`
+- `timeline(...)`
+- `configuredDeviceList(...)`
+- `deleteDevice(...)`
+- `deviceConfiguredList(...)`
+- `cancelQr(...)`
+
+### Builder flow example (TOTP enrollment)
 
 ```swift
-func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-    cidaasView.webView(webView, didStartProvisionalNavigation: navigation)
-}
+let mfa = Cidaas.mfa(.totp)
 
-func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-    cidaasView.webView(webView, didFail: navigation, withError: error)
-}
-
-func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-    cidaasView.webView(webView, decidePolicyFor: navigationAction, decisionHandler: decisionHandler)
-}
-
-func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-    cidaasView.webView(webView, didFinish: navigation)
-}
-```
-   
-Call the **loginWithEmbeddedBrowser()** function and get the access token as callback
-   
-```swift
-cidaasView.loginWithEmbeddedBrowser(delegate: self) {
-    switch $0 {
-        case .success(let successResponse):
-            // your success code here
-            break
-        case .failure(let error):
-            // your failure code here
-        break
+mfa.enrollment().initiation(accessToken: token, sub: userSub) { initResult in
+    switch initResult {
+    case .success(result: let setup):
+        // Use setup.totpSecret to show QR / setup in authenticator app.
+        mfa.enrollment().verification(
+            exchangeId: setup.setupExchangeId,
+            otp: "123456"
+        ) { verifyResult in
+            print(verifyResult)
+        }
+    case .failure(error: let error):
+        print("MFA initiation failed: \(error.localizedDescription)")
     }
-}  
+}
 ```
 
-## Screenshots
-<p align="center">
+---
 
-<img src = "https://user-images.githubusercontent.com/26590601/35260372-3b424b8a-0031-11e8-93be-598f473ac753.png" alt="Screen 1" style="width:40%" height="600">
+## Device Registration (`CidaasDevice`)
 
-<img src = "https://user-images.githubusercontent.com/26590601/35260352-18800f2e-0031-11e8-908e-85b98c306e99.png" alt="Screen 2" style="width:40%" height="600">
+### Entry point
 
-</p>
+```swift
+let device = Cidaas.device()
+```
+
+### Public methods
+
+`registerDevice(clientId:pushId:completion:)` (iOS 14+)
+
+`registerDevice(clientId:pushId:) async throws -> DeviceRegistrationVerifyResult` (iOS 14+)
+
+Parameters:
+- `clientId` (**required**, non-empty)
+- `pushId` (**required**, non-empty FCM token mapped by your integration)
+
+Return:
+- `DeviceRegistrationVerifyResult` with `deviceId`
+
+Failures can occur for:
+- missing/invalid input
+- missing `DomainURL` in SDK properties
+- unsupported App Attest environment
+- network/service failures
+- malformed service responses
+
+### Minimal setup example (completion)
+
+```swift
+Cidaas.device().registerDevice(clientId: "your-client-id", pushId: pushToken) { result in
+    switch result {
+    case .success(result: let value):
+        print("Registered deviceId: \(value.deviceId)")
+    case .failure(error: let error):
+        print("Device registration failed: \(error.localizedDescription)")
+    }
+}
+```
+
+### Async example
+
+```swift
+@available(iOS 14.0, *)
+func registerDevice(pushToken: String) async {
+    do {
+        let result = try await Cidaas.device().registerDevice(
+            clientId: "your-client-id",
+            pushId: pushToken
+        )
+        print("Registered deviceId: \(result.deviceId)")
+    } catch {
+        print("Device registration failed: \(error.localizedDescription)")
+    }
+}
+```
+
+---
+
+## Configuration Flow (Recommended Order)
+
+1. Ensure `Cidaas.plist` exists in app bundle.
+2. Load/initialize SDK properties before calling v3 APIs.
+3. For browser auth, always pass a live `UIViewController`.
+4. For device registration:
+   - run on iOS 14+ physical device
+   - include `NSFaceIDUsageDescription`
+   - ensure push token is available and non-empty
+
+---
+
+## Error Handling
+
+All completion APIs return `Result<T>` (SDK result type). A robust pattern is:
+
+```swift
+func handle(_ error: Error) {
+    if let webAuth = error as? WebAuthError {
+        print("SDK error code: \(webAuth.errorCode)")
+        print("SDK status: \(webAuth.statusCode)")
+        print("SDK message: \(webAuth.errorMessage)")
+    } else {
+        print("Error: \(error.localizedDescription)")
+    }
+}
+```
+
+For async APIs, use `do/try/catch` and re-use the same typed error handling.
+
+---
+
+## Security Setup Notes
+
+### Browser and redirect
+
+- Redirect URI in `Cidaas.plist` must match your tenant app registration.
+- Call `Cidaas.WebAuth.handleRedirect(_:)` from app/scene URL handler when your integration path requires it.
+
+### Device registration
+
+- Requires App Attest support (iOS 14+ and supported device/environment).
+- Uses DPoP + biometric proof headers internally for verification step.
+- Host app must provide `NSFaceIDUsageDescription`.
+
+---
+
+## Troubleshooting / Common Mistakes
+
+- **`file not found` / property errors**: `Cidaas.plist` missing from target or missing keys.
+- **WebAuth `delegate` missing**: presenter view controller was deallocated before call.
+- **Social URL/sign-in fails**: missing `provider` or `requestId`.
+- **MFA validation failures**: missing required flow fields (`sub`, `exchangeId`, `requestId`, etc.).
+- **Device registration fails early**:
+  - running on unsupported App Attest environment
+  - empty `clientId`/`pushId`
+  - `DomainURL` not configured
+
+---
+
+## Suggested Swift Doc Comments (`///`) for Public APIs
+
+Add/keep Apple-style comments on public entry points and terminal methods. Example style:
+
+```swift
+/// Creates a builder for hosted browser authentication flows.
+/// - Parameter delegate: The view controller used to present browser authentication UI.
+/// - Returns: A configured ``CidaasWebAuthBuilder``.
+public func webAuth(delegate: UIViewController) -> CidaasWebAuthBuilder
+```
+
+```swift
+/// Registers the current device using App Attest and proof headers.
+/// - Parameters:
+///   - clientId: OAuth client id from your Cidaas configuration.
+///   - pushId: Push token associated with the device.
+///   - completion: Returns the registered device id on success.
+public func registerDevice(
+    clientId: String,
+    pushId: String,
+    completion: @escaping (Result<DeviceRegistrationVerifyResult>) -> Void
+)
+```
+
+This documentation intentionally covers only `Cidaas/Classes/v3/`.
