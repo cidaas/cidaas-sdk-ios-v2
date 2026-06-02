@@ -7,8 +7,9 @@ import Foundation
 import Alamofire
 
 extension Cidaas {
-    /// Device registration entry point.
-    public var device: CidaasDevice {
+
+    /// Device registration entry point (App Attest + DPoP + biometric proofs). iOS 14+.
+    public static func device() -> CidaasDevice {
         CidaasDevice()
     }
 }
@@ -18,18 +19,31 @@ public final class CidaasDevice {
 
     fileprivate init() {}
 
-    /// Logs initiate/verify API responses; includes error details when the call fails.
+    private static let logCategory = "cidaas-sdk-device-log"
+
+    /// Logs initiate/verify API responses when SDK logging is enabled.
     private func logDeviceRegistration(_ phase: String, response: String? = nil, error: Error? = nil) {
+        guard Cidaas.shared.ENABLE_LOG else { return }
         if let response {
-            print("[CidaasDevice] \(phase) response: \(response)")
+            logw("[CidaasDevice] \(phase) response: \(response)", cname: Self.logCategory)
         }
         if let error {
             if let webAuth = error as? WebAuthError {
-                print("[CidaasDevice] \(phase) error: \(webAuth.errorMessage) (status=\(webAuth.statusCode))")
+                logw("[CidaasDevice] \(phase) error: \(webAuth.errorMessage) (status=\(webAuth.statusCode))", cname: Self.logCategory)
             } else {
-                print("[CidaasDevice] \(phase) error: \(error.localizedDescription)")
+                logw("[CidaasDevice] \(phase) error: \(error.localizedDescription)", cname: Self.logCategory)
             }
         }
+    }
+
+    @available(iOS 14.0, *)
+    private func appAttestUnavailableError() -> WebAuthError {
+        let err = WebAuthError.shared.serviceFailureException(
+            errorCode: 400,
+            errorMessage: DeviceRegistrationAppAttest.unsupportedError().localizedDescription,
+            statusCode: 400
+        )
+        return err
     }
 
     /// Full flow: request session + nonce, then attest the app and complete registration with Face ID / Touch ID.
@@ -40,6 +54,14 @@ public final class CidaasDevice {
         pushId: String,
         completion: @escaping (Result<DeviceRegistrationVerifyResult>) -> Void
     ) {
+        guard DeviceRegistrationAppAttest.isSupported else {
+            let err = appAttestUnavailableError()
+            logDeviceRegistration("register", error: err)
+            DispatchQueue.main.async {
+                completion(.failure(error: err))
+            }
+            return
+        }
         startRegistration(clientId: clientId, pushId: pushId) { initiateResult in
             switch initiateResult {
             case .failure(error: let error):
@@ -65,8 +87,7 @@ public final class CidaasDevice {
         }
     }
 
-    /// Step 1: obtain `sessionId` and `nonce` for this device (internal).
-    func startRegistration(
+    private func startRegistration(
         clientId: String,
         pushId: String,
         completion: @escaping (Result<DeviceRegistrationInitiateResult>) -> Void
@@ -171,9 +192,8 @@ public final class CidaasDevice {
         }
     }
 
-    /// Step 2: App Attest + proof JWTs + finish registration (internal; prompts for biometrics).
     @available(iOS 14.0, *)
-    func completeRegistration(
+    private func completeRegistration(
         initiateResult: DeviceRegistrationInitiateResult,
         completion: @escaping (Result<DeviceRegistrationVerifyResult>) -> Void
     ) {
@@ -209,7 +229,6 @@ public final class CidaasDevice {
 
         Task {
             do {
-                // App Attest key + attestation bound to the registration nonce.
                 let appAttestKeyId = try await DeviceRegistrationAppAttest.generateKeyId()
                 let attestation = try await DeviceRegistrationAppAttest.attest(
                     keyId: appAttestKeyId,
@@ -285,6 +304,7 @@ public final class CidaasDevice {
                     errorMessage: error.localizedDescription,
                     statusCode: 400
                 )
+                self.logDeviceRegistration("verify", error: err)
                 DispatchQueue.main.async {
                     completion(.failure(error: err))
                 }

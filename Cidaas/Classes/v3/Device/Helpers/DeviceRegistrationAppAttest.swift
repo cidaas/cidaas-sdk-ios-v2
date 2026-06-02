@@ -11,9 +11,22 @@ import Foundation
 @available(iOS 14.0, *)
 enum DeviceRegistrationAppAttest {
 
+    static var isSupported: Bool {
+        DCAppAttestService.shared.isSupported
+    }
+
+    static func unsupportedError() -> NSError {
+        NSError(
+            domain: "CidaasDeviceRegistration",
+            code: 10,
+            userInfo: [NSLocalizedDescriptionKey: "App Attest is not supported on this device or environment."]
+        )
+    }
+
     /// Creates a new App Attest key in the Secure Enclave.
     static func generateKeyId() async throws -> String {
-        try await DCAppAttestService.shared.generateKey()
+        guard isSupported else { throw unsupportedError() }
+        return try await DCAppAttestService.shared.generateKey()
     }
 
     /// Signs an attestation over SHA256 of the registration nonce.

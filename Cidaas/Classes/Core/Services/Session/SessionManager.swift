@@ -16,33 +16,49 @@ public class SessionManager {
     public var session: Session
     var deviceInfo: DeviceInfoModel
     var push_id: String
+
+    private var publicKeyPinningOptions: CidaasPublicKeyPinningOptions?
+    private let sessionLock = NSLock()
     
     public init() {
-        
-        // get device information
-        let deviceInfoEntity = DBHelper.shared.getDeviceInfo()
-        
-        // custom headers
+        deviceInfo = DBHelper.shared.getDeviceInfo()
+        push_id = DBHelper.shared.getFCM()
+        headers = Self.makeDefaultHeaders(deviceInfo: deviceInfo)
+        session = Self.makeSession(headers: headers, pinningOptions: nil)
+    }
+
+    /// Rebuilds the Alamofire ``Session`` with optional public-key hash pinning (call from ``Cidaas/setPublicKeyPinning``).
+    func setPublicKeyPinning(_ options: CidaasPublicKeyPinningOptions?) {
+        sessionLock.lock()
+        publicKeyPinningOptions = options
+        session = Self.makeSession(headers: headers, pinningOptions: options)
+        sessionLock.unlock()
+    }
+
+    private static func makeDefaultHeaders(deviceInfo: DeviceInfoModel) -> HTTPHeaders {
         let location = DBHelper.shared.getLocation()
-        headers = AF.session.configuration.headers
+        var headers = AF.session.configuration.headers
         headers["User-Agent"] = CidaasUserAgentBuilder.shared.UAString()
         headers["lat"] = location.0
         headers["lon"] = location.1
-        headers["deviceId"] = deviceInfoEntity.deviceId
-        headers["deviceMake"] = deviceInfoEntity.deviceMake
-        headers["deviceModel"] = deviceInfoEntity.deviceModel
-        headers["deviceVersion"] = deviceInfoEntity.deviceVersion
-        
-        // configuration
+        headers["deviceId"] = deviceInfo.deviceId
+        headers["deviceMake"] = deviceInfo.deviceMake
+        headers["deviceModel"] = deviceInfo.deviceModel
+        headers["deviceVersion"] = deviceInfo.deviceVersion
+        return headers
+    }
+
+    private static func makeSession(
+        headers: HTTPHeaders,
+        pinningOptions: CidaasPublicKeyPinningOptions?
+    ) -> Session {
         let configuration = URLSessionConfiguration.af.default
         configuration.headers = headers
-        
-        // session manager
-        session = Session(configuration: configuration)
-        
-        // construct device details
-        deviceInfo = DBHelper.shared.getDeviceInfo()
-        push_id = DBHelper.shared.getFCM()
+        let serverTrustManager = pinningOptions.flatMap { CidaasCertificatePinning.makeServerTrustManager(options: $0) }
+        if let serverTrustManager {
+            return Session(configuration: configuration, serverTrustManager: serverTrustManager)
+        }
+        return Session(configuration: configuration)
     }
     
     func startSession(url: String, method: HTTPMethod, parameters: [String: Any]?, extraheaders: [String: String] = [String: String](), callback: @escaping (String?, WebAuthError?) -> Void) {
