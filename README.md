@@ -4,7 +4,7 @@ Integrate the Cidaas iOS SDK into your app. Use **v3 builders** in `Cidaas/Class
 
 [cidaas](https://www.cidaas.com) provides SSO (OAuth 2.0 / OpenID Connect), MFA, passwordless login, social login, native login, consent flows, user account management and device registration.
 
-**Start here:** [SDK Module Map](#sdk-module-map) → [Quick Start](#quick-start) → [Module API Guide (v3)](#module-api-guide)
+**Start here:** [Quick Start](#quick-start) → [Module API Guide (v3)](#module-api-guide)
 
 **Also covered:** token storage, async helpers, TLS pinning, DPoP and biometric proofs.
 
@@ -12,8 +12,8 @@ Integrate the Cidaas iOS SDK into your app. Use **v3 builders** in `Cidaas/Class
 
 ## Table of Contents
 
-- [SDK Module Map](#sdk-module-map)
 - [Quick Start](#quick-start)
+- [SDK Module Map](#sdk-module-map)
 - [Platform Requirements](#platform-requirements)
 - [Next Steps](#next-steps)
 - [Builder Pattern](#builder-pattern)
@@ -39,82 +39,49 @@ Integrate the Cidaas iOS SDK into your app. Use **v3 builders** in `Cidaas/Class
 
 ## Quick Start
 
-This section gets **browser login** working with v3 `webAuth`. You need a Swift iOS app target, a Cidaas tenant app and matching redirect URLs on the portal and device.
+Get **browser login** working with v3 `webAuth`. Follow the steps below in order. Detailed plist keys, portal settings and API reference live in linked sections — not repeated here.
 
-### Install the SDK
+### Step 1 — Create a project
 
-Add the **`Cidaas`** package via Swift Package Manager (see [SDK Module Map — Installation](#sdk-module-map)). CocoaPods isn't supported.
+In Xcode:
+
+1. **File → New → Project** (⌘+Shift+N)
+2. Select **iOS → App**, set **Language** to Swift
+3. Choose SwiftUI or Storyboard and click **Create**
+
+Pick a **Bundle Identifier** you can register in the Cidaas portal and in redirect URL settings.
+
+### Step 2 — Add the Cidaas SDK
+
+Add the **`Cidaas`** package with Swift Package Manager — see [Installation](#sdk-module-map). Link the **`Cidaas`** library to your app target. CocoaPods isn't supported.
 
 ```swift
 import Cidaas
 ```
 
-### Tenant and portal setup
+### Step 3 — Configure your Cidaas tenant
 
-Create or open an **App / Client** in the Cidaas admin portal. See [Getting Client Id and URLs](#getting-client-id-and-urls) for Client ID, Domain URL, scopes, grant types, redirect URLs and roles.
+In the Cidaas admin portal create or open an **App / Client**. Register allowed redirect and logout redirect URLs for your app. See [Getting Client Id and URLs](#getting-client-id-and-urls) for Client ID, Domain URL, scopes and grant types.
 
-### `Cidaas.plist` and URL scheme
+### Step 4 — Add app configuration
 
-Add `Cidaas.plist` to your app target and register the redirect scheme in `Info.plist`.
+Add `Cidaas.plist` to your app target and register the redirect URL scheme in `Info.plist`. Full templates, key reference and URL scheme setup are in [SDK Configuration](#sdk-configuration).
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>DomainURL</key>
-    <string>https://your-cidaas-domain</string>
-    <key>ClientId</key>
-    <string>your-client-id</string>
-    <key>RedirectURL</key>
-    <string>myapp://callback</string>
-    <key>PostLogoutRedirectURL</key>
-    <string>myapp://callback</string>
-    <key>CidaasVersion</key>
-    <string>3</string>
-</dict>
-</plist>
-```
+### Step 5 — Initialize the SDK
 
-| Key | Required | Description |
-|-----|----------|-------------|
-| `DomainURL` | Yes | Base URL of your Cidaas tenant |
-| `ClientId` | Yes | OAuth client id from the portal |
-| `RedirectURL` | Yes | Callback URL after login |
-| `PostLogoutRedirectURL` | Yes | Callback URL after browser logout |
-| `CidaasVersion` | Recommended | Set to `3` for v3 response handling |
-
-Drag the file into Xcode and check **Add to target**.
-
-For `RedirectURL` `myapp://callback`, add scheme `myapp` to `Info.plist`:
-
-```xml
-<key>CFBundleURLTypes</key>
-<array>
-    <dict>
-        <key>CFBundleURLSchemes</key>
-        <array>
-            <string>myapp</string>
-        </array>
-    </dict>
-</array>
-```
-
-The scheme, plist redirect URL and portal entry must match exactly.
-
-### Initialize at launch
-
-Load OAuth settings before any v3 call:
+Call at launch before any v3 API:
 
 ```swift
 Cidaas.shared.readPropertyFile()
 ```
 
-`readPropertyFile()` loads `Cidaas.plist` asynchronously. Wait until OAuth properties are available before calling `webAuth`.
+The SDK loads `Cidaas.plist` asynchronously. Wait until OAuth properties are available before calling `webAuth`. Programmatic config and runtime flags: [SDK Configuration](#sdk-configuration).
 
-### Browser login and logout
+### Step 6 — Implement login and logout
 
-**Completion handler:**
+Present login from a live view controller. The SDK uses `ASWebAuthenticationSession` and handles the OAuth redirect.
+
+**Sign in:**
 
 ```swift
 Cidaas.shared
@@ -132,9 +99,7 @@ Cidaas.shared
     }
 ```
 
-**Async/await** (iOS 13+): see [Browser Authentication](#module-api-guide) for `signIn()` async.
-
-**Logout:**
+**Sign out:**
 
 ```swift
 Cidaas.shared
@@ -149,15 +114,13 @@ Cidaas.shared
     }
 ```
 
-**Registration and social login** — see [Browser Authentication](#module-api-guide).
+Registration, social login and async `signIn()` — [Browser Authentication](#module-api-guide). Error handling — [Error Handling](#error-handling).
 
-### Verify the integration
+### Step 7 — Run your app
 
-- `Cidaas.plist` is in the app target and `readPropertyFile()` ran at launch
-- Redirect URL and URL scheme match the Cidaas portal
-- Login presents the system browser and returns tokens in your completion handler
+Build and run in Xcode (⌘+R). Tap your login action, complete sign-in in the system browser and confirm tokens arrive in the completion handler.
 
-v3 browser auth uses `ASWebAuthenticationSession` and completes the OAuth redirect for you. Continue with [Next Steps](#next-steps) for MFA, user accounts and device registration.
+> You have working v3 browser login. Continue with [Next Steps](#next-steps) for MFA, user accounts and device registration.
 
 ---
 
@@ -279,7 +242,58 @@ Single public method. Internally runs initiate → attestation → verify with D
 
 ## SDK Configuration
 
-Load configuration from `Cidaas.plist` or set it on `Cidaas.shared`.
+Load configuration from `Cidaas.plist` or set it on `Cidaas.shared`. Use this section when completing [Quick Start — Step 4](#quick-start).
+
+### `Cidaas.plist`
+
+Create `Cidaas.plist` in your app target:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>DomainURL</key>
+    <string>https://your-cidaas-domain</string>
+    <key>ClientId</key>
+    <string>your-client-id</string>
+    <key>RedirectURL</key>
+    <string>myapp://callback</string>
+    <key>PostLogoutRedirectURL</key>
+    <string>myapp://callback</string>
+    <key>CidaasVersion</key>
+    <string>3</string>
+</dict>
+</plist>
+```
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `DomainURL` | Yes | Base URL of your Cidaas tenant |
+| `ClientId` | Yes | OAuth client id from the portal |
+| `RedirectURL` | Yes | Callback URL after login |
+| `PostLogoutRedirectURL` | Yes | Callback URL after browser logout |
+| `CidaasVersion` | Recommended | Set to `3` for v3 response handling |
+
+Drag the file into Xcode and check **Add to target**. Portal values come from [Getting Client Id and URLs](#getting-client-id-and-urls).
+
+### URL scheme
+
+For `RedirectURL` `myapp://callback`, register scheme `myapp` in `Info.plist`:
+
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+    <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+            <string>myapp</string>
+        </array>
+    </dict>
+</array>
+```
+
+The scheme, plist redirect URL and portal entry must match exactly. See [Security Setup](#security-setup) for production redirect guidance.
 
 ### Load from plist
 
@@ -377,7 +391,7 @@ Call zero or one flow selector and any number of `extraParameters` calls:
 
 ### Examples
 
-See [Quick Start — Browser login and logout](#quick-start) for sign-in and sign-out. Optional builder steps:
+Sign-in and sign-out samples are in [Quick Start — Step 6](#quick-start). Optional builder steps:
 
 ```swift
 // Registration — use .registration() for sign-up only, not login
@@ -1033,7 +1047,7 @@ Set `Cidaas.shared.ENABLE_LOG = true` — see [SDK Configuration](#sdk-configura
 
 ### Result-based APIs
 
-Completion handlers return `Result<T>` with `WebAuthError` on failure. Pattern matches [Quick Start](#quick-start) login handling:
+Completion handlers return `Result<T>` with `WebAuthError` on failure. Pattern matches [Quick Start — Step 6](#quick-start):
 
 ```swift
 func handleSDKError(_ error: WebAuthError) {
@@ -1180,7 +1194,14 @@ Requires iOS 14+, physical device and `NSFaceIDUsageDescription`. See [Device Re
 
 ## Getting Client Id and URLs
 
-Create an **App / Client** in the Cidaas portal and configure scopes, grant types and roles for your app. Copy the **Client ID** and **Domain URL** into `Cidaas.plist` (see [Quick Start](#quick-start) for plist keys and redirect URLs).
+Create an **App / Client** in the Cidaas portal and configure:
+
+- **Scopes** — e.g. `openid`, `profile`, `email`, `offline_access`
+- **Grant types** — authorization code with PKCE for mobile
+- **Allowed redirect URLs** and **logout redirect URLs** — must match [SDK Configuration](#sdk-configuration)
+- **Roles** — as required by your app
+
+Copy the **Client ID** and **Domain URL** into `Cidaas.plist`.
 
 ---
 
