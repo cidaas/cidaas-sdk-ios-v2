@@ -95,10 +95,26 @@ public class VerificationInteractor {
     }
     
     public func initiate(verificationType: String, incomingData: InitiateRequest, callback: @escaping (Result<InitiateResponse>) -> Void) {
-        // validation
-        if (verificationType == "" || incomingData.sub == "" || incomingData.request_id == "" || incomingData.usage_type == "") {
-            // send response to presenter
-            let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "verificationType or sub or request_id or usage_type cannot be empty", statusCode: 417)
+        var validationMessage: String?
+        if verificationType.isEmpty || incomingData.request_id.isEmpty || incomingData.usage_type.isEmpty {
+            validationMessage = "verificationType, request_id, and usage_type cannot be empty"
+        } else if incomingData.usage_type == UsageTypes.INITIAL.rawValue {
+            if incomingData.identifier.isEmpty {
+                validationMessage = "identifier is required for INITIAL_AUTHENTICATION"
+            } else if !incomingData.sub.isEmpty {
+                validationMessage = "sub must not be sent for INITIAL_AUTHENTICATION; use identifier"
+            }
+        } else if incomingData.usage_type == UsageTypes.MFA.rawValue {
+            if !incomingData.identifier.isEmpty {
+                validationMessage = "identifier is only allowed for INITIAL_AUTHENTICATION"
+            } else if incomingData.sub.isEmpty {
+                validationMessage = "masked sub is required for MULTIFACTOR_AUTHENTICATION"
+            }
+        } else if incomingData.sub.isEmpty && incomingData.identifier.isEmpty {
+            validationMessage = "sub or identifier is required"
+        }
+        if let validationMessage {
+            let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: validationMessage, statusCode: 417)
             sharedPresenter.initiate(initiateResponse: nil, errorResponse: error, callback: callback)
             return
         }

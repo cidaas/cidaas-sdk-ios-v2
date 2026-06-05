@@ -9,6 +9,7 @@
 import Foundation
 
 public enum UsageTypes : String {
+    case INITIAL = "INITIAL_AUTHENTICATION"
     case PASSWORDLESS = "PASSWORDLESS_AUTHENTICATION"
     case MFA = "MULTIFACTOR_AUTHENTICATION"
 }

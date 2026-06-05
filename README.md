@@ -1,99 +1,61 @@
 # Cidaas iOS SDK — Integration Guide
 
-This guide covers the **v3 API surface** (`Cidaas/Classes/v3/`) and walks you through integrating the SDK into an iOS app from Xcode, step by step.
+Integrate the Cidaas iOS SDK into your app. Use **v3 builders** in `Cidaas/Classes/v3/` for browser auth, MFA, user accounts and device registration. **Core** covers configuration, token storage and TLS pinning. **V2** modules remain for embedded WebView login, native credentials and consent where no v3 wrapper exists.
 
-[cidaas](https://www.cidaas.com) is a Cloud Identity & Access Management platform with SSO (OAuth 2.0 / OpenID Connect), MFA, passwordless login, social login and device registration.
+[cidaas](https://www.cidaas.com) provides SSO (OAuth 2.0 / OpenID Connect), MFA, passwordless login, social login, native login, consent flows, user account management and device registration.
+
+**Start here:** [SDK Module Map](#sdk-module-map) → [Quick Start](#quick-start) → [Module API Guide (v3)](#module-api-guide)
+
+**Also covered:** token storage, async helpers, TLS pinning, DPoP and biometric proofs.
+
+---
 
 ## Table of Contents
 
-- [Get Started](#get-started)
+- [SDK Module Map](#sdk-module-map)
+- [Quick Start](#quick-start)
 - [Platform Requirements](#platform-requirements)
 - [Next Steps](#next-steps)
-- [Troubleshooting and Advanced](#troubleshooting-and-advanced)
-- [Module Overview](#module-overview)
-- [Builder Pattern in v3](#builder-pattern-in-v3)
-- [Module API Guide](#module-api-guide)
-- [Configuration Flow](#configuration-flow)
+- [Builder Pattern](#builder-pattern)
+- [SDK Configuration](#sdk-configuration)
+- [Module API Guide (v3)](#module-api-guide)
+- [Core APIs](#core-apis)
+- [Embedded WebView Login](#embedded-webview-login)
+- [Native APIs](#native-apis)
+- [Consent](#consent)
+- [Async/Await Helpers](#asyncawait-helpers)
+- [Shared Models and Storage](#shared-models-and-storage)
+- [Advanced Configuration](#advanced-configuration)
 - [Error Handling](#error-handling)
-- [Security Setup Notes](#security-setup-notes)
+- [Security Setup](#security-setup)
+- [Troubleshooting](#troubleshooting)
 - [Migrating to Cidaas V3](#migrating-to-cidaas-v3)
 - [Getting Client Id and URLs](#getting-client-id-and-urls)
+- [API Choice Guide](#api-choice-guide)
 
 ---
 
-<a id="get-started"></a>
+<a id="quick-start"></a>
 
-## Get Started
+## Quick Start
 
-### Step 1 — Create a new project
+This section gets **browser login** working with v3 `webAuth`. You need a Swift iOS app target, a Cidaas tenant app and matching redirect URLs on the portal and device.
 
-**In Xcode:**
+### Install the SDK
 
-1. **File → New → Project** (or **⌘+Shift+N**)
-2. Select **iOS → App**
-3. Configure your project:
-   - **Product Name**: e.g. `Cidaas-Sample`
-   - **Interface**: SwiftUI or Storyboard (either works)
-   - **Language**: Swift
-4. Choose a location and click **Create**
-
-> Use a unique **Bundle Identifier** (e.g. `com.example.cidaas-sample`). You will register this in your Cidaas tenant and in your redirect URL configuration.
-
----
-
-### Step 2 — Add the Cidaas SDK
-
-Add the SDK with Swift Package Manager.
-
-**In Xcode:**
-
-1. **File → Add Package Dependencies** (or **⌘+Shift+K**)
-2. Enter the package URL:
-
-   ```text
-   https://github.com/Cidaas/cidaas-sdk-ios-v2
-   ```
-
-3. Select your dependency rule → **Add Package**
-4. Select your app target → **Add Package**
-
-Import the SDK in your Swift files:
+Add the **`Cidaas`** package via Swift Package Manager (see [SDK Module Map — Installation](#sdk-module-map)). CocoaPods isn't supported.
 
 ```swift
 import Cidaas
 ```
 
----
+### Tenant and portal setup
 
-### Step 3 — Configure your Cidaas tenant
+Create or open an **App / Client** in the Cidaas admin portal. See [Getting Client Id and URLs](#getting-client-id-and-urls) for Client ID, Domain URL, scopes, grant types, redirect URLs and roles.
 
-Register a native/mobile app in your Cidaas admin portal and note the values you need for the SDK.
+### `Cidaas.plist` and URL scheme
 
-1. Open your **Cidaas admin portal** and create or select an **App / Client** for your mobile app.
-2. Note your **Client ID** and **Domain URL** (e.g. `https://your-tenant.cidaas.de`).
-3. Add **Allowed Redirect URLs** that match your app. For a custom URL scheme:
-
-   ```text
-   YOUR_URL_SCHEME://callback
-   ```
-
-   Example: if your redirect is `myapp://callback`, register exactly that URL in the portal.
-
-4. Add **Allowed Logout Redirect URLs** (often the same value as your login redirect):
-
-   ```text
-   YOUR_URL_SCHEME://callback
-   ```
-
-5. Save your app/client configuration.
-
-> See [Getting Client Id and URLs](#getting-client-id-and-urls) for scope, grant types and other portal settings.
-
----
-
-### Step 4 — Configure app credentials
-
-Create `Cidaas.plist` in your project directory:
+Add `Cidaas.plist` to your app target and register the redirect scheme in `Info.plist`.
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -118,36 +80,13 @@ Create `Cidaas.plist` in your project directory:
 |-----|----------|-------------|
 | `DomainURL` | Yes | Base URL of your Cidaas tenant |
 | `ClientId` | Yes | OAuth client id from the portal |
-| `RedirectURL` | Yes | Custom URL scheme callback after login |
-| `PostLogoutRedirectURL` | Yes | Callback after browser logout |
-| `CidaasVersion` | Recommended | Set to `3` for v3 API behaviour |
+| `RedirectURL` | Yes | Callback URL after login |
+| `PostLogoutRedirectURL` | Yes | Callback URL after browser logout |
+| `CidaasVersion` | Recommended | Set to `3` for v3 response handling |
 
-Drag `Cidaas.plist` into Xcode and ensure **Add to target** is checked for your app target.
+Drag the file into Xcode and check **Add to target**.
 
-<details>
-<summary><strong>Programmatic configuration (alternative)</strong></summary>
-
-Instead of relying on the plist alone, you can set credentials in code (useful for environment-specific builds):
-
-```swift
-Cidaas.shared.setURL(
-    domainURL: "https://your-cidaas-domain",
-    clientId: "your-client-id",
-    redirectURL: "myapp://callback"
-)
-```
-
-You still need matching redirect URLs registered in your Cidaas tenant.
-
-</details>
-
----
-
-### Step 5 — Register the URL scheme
-
-The redirect URL in `Cidaas.plist` must match a URL scheme registered in your app.
-
-Add `CFBundleURLTypes` to your app’s `Info.plist`. If your redirect is `myapp://callback`, register the `myapp` scheme:
+For `RedirectURL` `myapp://callback`, add scheme `myapp` to `Info.plist`:
 
 ```xml
 <key>CFBundleURLTypes</key>
@@ -161,153 +100,64 @@ Add `CFBundleURLTypes` to your app’s `Info.plist`. If your redirect is `myapp:
 </array>
 ```
 
-Use [custom URL schemes](https://developer.apple.com/documentation/uikit/core_app/communicating_with_other_apps_using_custom_urls) or [Universal Links](https://developer.apple.com/library/content/documentation/General/Conceptual/AppSearch/UniversalLinks.html) to return control from the browser to your app.
+The scheme, plist redirect URL and portal entry must match exactly.
 
-> **Note:** Register the same custom scheme URL in your Cidaas app’s redirect URL settings.
+### Initialize at launch
 
----
-
-### Step 6 — Initialize the SDK
-
-Load `Cidaas.plist` into the SDK before calling any v3 APIs. Call this early in your app lifecycle (e.g. in `AppDelegate`, `@main` app init or before the first login):
+Load OAuth settings before any v3 call:
 
 ```swift
 Cidaas.shared.readPropertyFile()
 ```
 
-The SDK reads the plist asynchronously and stores OAuth properties internally. Ensure `DBHelper.shared.getPropertyFile()` is populated before starting browser auth (retry briefly after `readPropertyFile()` if needed).
+`readPropertyFile()` loads `Cidaas.plist` asynchronously. Wait until OAuth properties are available before calling `webAuth`.
 
-You can also use the shared instance directly:
+### Browser login and logout
 
-```swift
-let cidaas = Cidaas.shared
-```
-
----
-
-### Step 7 — Create the authentication service
-
-Create `AuthenticationService.swift` in your project and wire login/logout using the v3 browser auth builder.
+**Completion handler:**
 
 ```swift
-import Foundation
-import UIKit
-import Cidaas
-
-@MainActor
-final class AuthenticationService: ObservableObject {
-    @Published var isAuthenticated = false
-    @Published var accessToken: String?
-    @Published var userSub: String?
-    @Published var isLoading = false
-    @Published var errorMessage: String?
-
-    private weak var presenter: UIViewController?
-
-    init(presenter: UIViewController) {
-        self.presenter = presenter
-    }
-
-    func login() {
-        guard let presenter else {
-            errorMessage = "No view controller available to present browser login."
-            return
-        }
-
-        isLoading = true
-        errorMessage = nil
-
-        Cidaas.shared
-            .webAuth(delegate: presenter)
-            .extraParameters(["scopes": "openid profile email offline_access"])
-            .signIn { [weak self] result in
-                Task { @MainActor in
-                    self?.isLoading = false
-                    switch result {
-                    case .success(result: let login):
-                        self?.isAuthenticated = true
-                        self?.accessToken = login.data.access_token
-                        self?.userSub = login.data.sub
-                    case .failure(error: let error):
-                        self?.errorMessage = "Login failed: \(error.localizedDescription)"
-                    }
-                }
-            }
-    }
-
-    func logout() {
-        guard let presenter, let sub = userSub, !sub.isEmpty else {
-            errorMessage = "User sub is required for logout."
-            return
-        }
-
-        isLoading = true
-        errorMessage = nil
-
-        Cidaas.shared
-            .webAuth(delegate: presenter)
-            .signOut(sub: sub) { [weak self] result in
-                Task { @MainActor in
-                    self?.isLoading = false
-                    switch result {
-                    case .success:
-                        self?.isAuthenticated = false
-                        self?.accessToken = nil
-                        self?.userSub = nil
-                    case .failure(error: let error):
-                        self?.errorMessage = "Logout failed: \(error.localizedDescription)"
-                    }
-                }
-            }
-    }
-}
-```
-
-**Async/await variant (iOS 13+):**
-
-```swift
-@available(iOS 13.0, *)
-func performLogin(from presenter: UIViewController) async {
-    isLoading = true
-    defer { isLoading = false }
-
-    do {
-        let login = try await Cidaas.shared
-            .webAuth(delegate: presenter)
-            .extraParameters(["scopes": "openid profile email offline_access"])
-            .signIn()
-        isAuthenticated = true
-        accessToken = login.data.access_token
-        userSub = login.data.sub
-    } catch {
-        errorMessage = "Login failed: \(error.localizedDescription)"
-    }
-}
-```
-
-**Registration and social login** use the same builder. Add `.registration()` or `.social(...)` only when you need those flows — not for a standard login:
-
-```swift
-// Registration (sign-up flow)
-Cidaas.shared.webAuth(delegate: presenter).registration().signIn { ... }
-
-// Social login
 Cidaas.shared
-    .webAuth(delegate: presenter)
-    .social(provider: "google", requestId: "your-request-id")
-    .signIn { ... }
+    .webAuth(delegate: viewController)
+    .extraParameters(["scopes": "openid profile email offline_access"])
+    .signIn { result in
+        switch result {
+        case .success(result: let login):
+            let token = login.data.access_token
+            let sub = login.data.sub
+            // Store token and sub securely in your app
+        case .failure(error: let error):
+            print("Login failed: \(error.errorMessage)")
+        }
+    }
 ```
 
----
+**Async/await** (iOS 13+): see [Browser Authentication](#module-api-guide) for `signIn()` async.
 
-### Step 8 — Run your app
+**Logout:**
 
-Press **⌘+R** in Xcode.
+```swift
+Cidaas.shared
+    .webAuth(delegate: viewController)
+    .signOut(sub: userSub) { result in
+        switch result {
+        case .success:
+            // Clear stored session
+        case .failure(error: let error):
+            print("Logout failed: \(error.errorMessage)")
+        }
+    }
+```
 
-1. Ensure `Cidaas.plist` is in the app target and `readPropertyFile()` has been called.
-2. Tap **Log In** → accept the system browser permission alert (if shown).
-3. Complete login in the browser.
-4. Your app receives tokens via the builder completion handler.
+**Registration and social login** — see [Browser Authentication](#module-api-guide).
+
+### Verify the integration
+
+- `Cidaas.plist` is in the app target and `readPropertyFile()` ran at launch
+- Redirect URL and URL scheme match the Cidaas portal
+- Login presents the system browser and returns tokens in your completion handler
+
+v3 browser auth uses `ASWebAuthenticationSession` and completes the OAuth redirect for you. Continue with [Next Steps](#next-steps) for MFA, user accounts and device registration.
 
 ---
 
@@ -315,11 +165,60 @@ Press **⌘+R** in Xcode.
 
 ## Platform Requirements
 
-| Capability | Minimum iOS |
-|------------|-------------|
-| SDK package | iOS 11+ |
-| `async/await` convenience APIs | iOS 13+ |
-| Device registration (`Cidaas.device()`) | iOS 14+ (physical device, App Attest) |
+| Capability | Minimum iOS | Notes |
+|------------|-------------|-------|
+| SDK package | iOS 11+ | Deployment target in `Package.swift` |
+| `async/await` v3 helpers | iOS 13+ | Browser auth, user accounts |
+| Device registration | iOS 14+ | Physical device; App Attest or Firebase App Check |
+| DPoP / biometric HTTP proofs | iOS 14+ | `Cidaas.shared.useDpop`, `useBiometric` |
+| MFA builders | iOS 11+ | Completion-handler APIs only (no async MFA wrappers) |
+| `Cidaas+AsyncAwait` extension | iOS 13+ | Convenience wrappers on `Cidaas.shared` |
+
+---
+
+<a id="sdk-module-map"></a>
+
+## SDK Module Map
+
+The SDK ships as one **`Cidaas`** Swift Package with three layers. Use **v3** for browser auth, MFA, user accounts and device registration.
+
+| Layer | Path | Entry point | Use when |
+|-------|------|-------------|----------|
+| **v3** | `Classes/v3/` | `Cidaas.shared.webAuth`, `.users()`, `.mfa()`, `.device()` | **Default** — browser auth, MFA, password reset, user info, device registration |
+| **Core** | `Classes/Core/` | `Cidaas.shared`, `CidaasView` | Config, token refresh, WebView login, pinning |
+| **Native (V2)** | `Classes/V2/Native/` | `CidaasNative.shared` | Native login UI, registration fields, link/unlink, deduplication |
+| **Consent (V2)** | `Classes/V2/Consent/` | `CidaasConsent.shared` | OAuth consent screens (no v3 wrapper) |
+
+### v3 entry points
+
+| Entry point | Returns | Purpose |
+|-------------|---------|---------|
+| `Cidaas.shared.webAuth(delegate:)` | `CidaasWebAuthBuilder` | Browser login, registration, social login and logout |
+| `Cidaas.WebAuth` | Static helpers | Custom browser integrations |
+| `Cidaas.users()` | `CidaasUsersBuilder` | User info and password reset |
+| `Cidaas.mfa(_:)` | `CidaasMFABuilder` | MFA enrollment and authentication |
+| `Cidaas.device()` | `CidaasDevice` | Device registration with attestation proofs |
+
+### Core and V2 entry points (no v3 wrapper)
+
+| Entry point | Purpose |
+|-------------|---------|
+| `Cidaas.shared` | Config, token refresh and session storage |
+| `CidaasView` | Embedded `WKWebView` OAuth login |
+| `CidaasNative.shared` | Native credentials login, registration, link/unlink |
+| `CidaasConsent.shared` | Consent details, accept, continue |
+
+v3 completion APIs return the SDK `Result<T>` type — see [Shared Models](#shared-models-and-storage).
+
+### Installation
+
+The SDK ships through **Swift Package Manager** only:
+
+```text
+https://github.com/Cidaas/cidaas-sdk-ios-v2
+```
+
+Select the **`Cidaas`** library product when adding the package.
 
 ---
 
@@ -327,248 +226,178 @@ Press **⌘+R** in Xcode.
 
 ## Next Steps
 
-You now have browser login and logout working with the Cidaas iOS SDK v3 API.
-
-Continue with the sections below for MFA, user accounts, device registration, error handling and advanced topics.
+After browser login works, open the [Module API Guide (v3)](#module-api-guide) for MFA, user accounts and device registration.
 
 ---
 
-<a id="troubleshooting-and-advanced"></a>
+<a id="builder-pattern"></a>
 
-## Troubleshooting and Advanced
+## Builder Pattern
 
-<details>
-<summary><strong>Common issues & solutions</strong></summary>
+v3 uses fluent builders. Chain configuration methods, then call a **terminal method** to run the flow.
 
-### Build errors: `Cidaas` module not found
+### Browser auth
 
-1. Verify the package appears under **Package Dependencies**
-2. Clean build folder (**⌘+Shift+K**) and rebuild (**⌘+R**)
-3. Restart Xcode if the module is still not found
+```
+Cidaas.shared.webAuth(delegate:)
+    → [optional: extraParameters / registration / social]
+    → signIn() or signOut(sub:)
+```
 
-### `file not found` / property errors
+Optional steps change the hosted page or OAuth parameters. Skip them all to use **login** with no extra parameters.
 
-- `Cidaas.plist` is missing from the app target or required keys are absent
-- Call `Cidaas.shared.readPropertyFile()` before v3 API calls
-- Ensure `PostLogoutRedirectURL` is present when using plist-based configuration
+### MFA
 
-### Browser opens but never returns to the app
+```
+Cidaas.mfa(.totp)
+    → enrollment() | authentication()
+    → branch methods (initiation, verification, pushAllow, …)
+    → configurations(sub:) on the root builder
+```
 
-1. Redirect URL in `Cidaas.plist` must match your Cidaas portal registration exactly
-2. URL scheme in `Info.plist` must match the scheme part of `RedirectURL` (e.g. `myapp` for `myapp://callback`)
-3. Bundle identifier and redirect URLs must be consistent across Xcode and the portal
+MFA builders cache `sub`, exchange ids and push selection between steps — see [MFA](#module-api-guide).
 
-### WebAuth delegate errors
+### User accounts
 
-- Pass a live `UIViewController` to `webAuth(delegate:)` and keep it alive until sign-in/sign-out completes
+```
+Cidaas.users()
+    → passwordReset(.initiate | .validate | .accept)
+    → fetchUserInfo(sub:) | fetchUserInfo(accessToken:)
+```
 
-### Social login fails
+### Device registration
 
-- `social(provider:requestId:)` requires non-empty `provider` and `requestId`
+```
+Cidaas.device().registerDevice(clientId:pushId:)
+```
 
-</details>
-
-<details>
-<summary><strong>Production deployment</strong></summary>
-
-### App Store preparation
-
-- Configure Universal Links for smoother redirect UX
-- Test on multiple iOS versions and device sizes
-- Add `NSFaceIDUsageDescription` if using device registration or biometric proofs
-- Handle network failures gracefully in your UI
-
-### Security best practices
-
-- Do not log access tokens or refresh tokens in production
-- Keep redirect URLs scoped to your app’s URL scheme or verified universal links
-- Use certificate/public-key pinning only when your security policy requires it (`Cidaas.shared.setPublicKeyPinning(...)`)
-
-</details>
+Single public method. Internally runs initiate → attestation → verify with DPoP and biometric proofs.
 
 ---
 
-<a id="module-overview"></a>
+<a id="sdk-configuration"></a>
 
-## Module Overview
+## SDK Configuration
 
-<details>
-<summary><strong>v3 public entry points</strong></summary>
+Load configuration from `Cidaas.plist` or set it on `Cidaas.shared`.
 
-- `Cidaas.shared.webAuth(delegate:)` → `CidaasWebAuthBuilder`
-- `Cidaas.WebAuth` static helpers (`handleRedirect`, `authorizationURL`)
-- `Cidaas.users()` → `CidaasUsersBuilder`
-- `Cidaas.mfa(_:)` → `CidaasMFABuilder`
-- `Cidaas.device()` → `CidaasDevice`
+### Load from plist
 
-</details>
+```swift
+Cidaas.shared.readPropertyFile()
+```
 
----
+`FileHelper` reads `Cidaas.plist` from the app bundle. Default filename: `"Cidaas"`. Override with `FileHelper.shared.filename`.
 
-<a id="builder-pattern-in-v3"></a>
+### Programmatic override
 
-## Builder Pattern in v3
+Use for multi-environment builds:
 
-<details>
-<summary><strong>BrowserAuth builder flow</strong></summary>
+```swift
+Cidaas.shared.setURL(
+    domainURL: "https://your-cidaas-domain",
+    clientId: "your-client-id",
+    redirectURL: "myapp://callback",
+    userDeviceId: ""   // optional; default empty
+)
+```
 
-1. Create builder with presenter: `Cidaas.shared.webAuth(delegate:)`
-2. Optional builder steps (call only when needed):
-   - `extraParameters(_:)` — add OAuth query parameters
-   - `registration()` — switch from login to registration
-   - `social(provider:requestId:)` — switch to social login
-3. Execute terminal method:
-   - `signIn(...)` — start sign-in (login, registration or social, depending on step 2)
-   - `signOut(sub:...)` — start sign-out
+### Runtime flags
 
-</details>
+| Property | Default | Purpose |
+|----------|---------|---------|
+| `ENABLE_LOG` | `false` | SDK diagnostic logging |
+| `ENABLE_PKCE` | `true` | PKCE for browser token exchange; disable only if your client uses a secret |
+| `useDpop` | `false` | Add `DPoP` JWT header on SDK HTTP requests (iOS 14+) |
+| `useBiometric` | `false` | Add `Biometric` JWT header; may prompt Face ID / Touch ID (iOS 14+) |
+| `biometricProofLocalizedReason` | `"Verify your identity"` | Prompt text when `useBiometric` is `true` |
 
-<details>
-<summary><strong>MFA builder flow</strong></summary>
+```swift
+Cidaas.shared.ENABLE_LOG = true
+Cidaas.shared.useDpop = true
+Cidaas.shared.useBiometric = true
+Cidaas.shared.biometricProofLocalizedReason = "Verify your identity to continue"
+```
 
-1. Create root builder: `Cidaas.mfa(.totp)` (or `.push`, `.pattern`, etc.)
-2. Choose branch:
-   - `enrollment()`
-   - `authentication()`
-   - `support()`
-3. Execute branch methods.
-
-The MFA builders cache intermediate values (`sub`, `exchangeId`, etc.) to reduce parameter repetition across a flow.
-
-</details>
-
-<details>
-<summary><strong>Users builder flow</strong></summary>
-
-`Cidaas.users()` is a facade-style builder:
-
-- password reset actions
-- account verification actions
-- user info fetch methods
-
-</details>
-
-<details>
-<summary><strong>Device API flow</strong></summary>
-
-`Cidaas.device().registerDevice(...)` is a single high-level flow that internally performs:
-
-- initiation request
-- App Attest proof creation
-- verification request
-
-</details>
+> Device registration always sends DPoP and biometric proofs on verify, regardless of `useDpop` / `useBiometric`.
 
 ---
 
 <a id="module-api-guide"></a>
 
-## Module API Guide
+## Module API Guide (v3)
 
 <details>
-<summary><strong>Browser Authentication (<code>CidaasWebAuthBuilder</code>)</strong></summary>
+<summary><strong>Browser Authentication — <code>CidaasWebAuthBuilder</code></strong></summary>
+
+### Purpose
+
+Presents the hosted login, registration or social page in the system browser and exchanges the authorization code for tokens.
 
 ### Entry point
 
 ```swift
-let webAuth = Cidaas.shared.webAuth(delegate: self)
+let builder = Cidaas.shared.webAuth(delegate: viewController)
 ```
 
-- **Required:** `delegate` (`UIViewController`) used to present system browser auth UI.
-- **Failure:** if the delegate is deallocated before execution, completion returns failure.
+| Parameter | Required | Default | Notes |
+|-----------|----------|---------|-------|
+| `delegate` | **Yes** | — | Live `UIViewController` for `ASWebAuthenticationSession`. The call fails if the delegate is deallocated before `signIn` or `signOut`. |
 
-### Configuration methods
+### Optional builder steps
 
-These are **optional builder steps** — you can chain them between `webAuth(delegate:)` and `signIn(...)`. You do not need to call any of them for a standard login. If you skip them all, the SDK starts a **login** flow with no extra OAuth parameters.
+Call zero or one flow selector and any number of `extraParameters` calls:
 
-`extraParameters(_ params: [String: String]) -> Self`
-- Not required — omit to use an empty dictionary (default)
-- Adds OAuth query parameters to the authorization URL (e.g. `scopes`, `prompt`, `ui_locales`)
-
-`registration() -> Self`
-- Not required — omit to use **login** mode (default)
-- Call this to open the hosted **registration** page instead of login
-
-`social(provider: String, requestId: String) -> Self`
-- Not required — omit unless you are doing social login
-- When called, both `provider` and `requestId` must be non-empty
+| Method | Required | Default | Returns |
+|--------|----------|---------|---------|
+| `extraParameters(_:)` | No | `[:]` | `Self` — OAuth query params (`scopes`, `prompt`, `ui_locales`, …) |
+| `registration()` | No | login flow | `Self` — opens hosted **registration** page |
+| `social(provider:requestId:)` | No | login flow | `Self` — both args must be non-empty when used |
 
 ### Terminal methods
 
-`signIn(completion:)` — returns `Result<LoginResponseEntity>`
+| Method | Required params | Returns | Errors |
+|--------|-----------------|---------|--------|
+| `signIn(completion:)` | — | `Result<LoginResponseEntity>` | `WebAuthError` (cancelled, network, config, …) |
+| `signIn()` async | — | `LoginResponseEntity` | throws `WebAuthError` (iOS 13+) |
+| `signOut(sub:completion:)` | non-empty `sub` | `Result<Bool>` | `WebAuthError` if `sub` empty or delegate missing |
+| `signOut(sub:)` async | non-empty `sub` | `Bool` | throws `WebAuthError` (iOS 13+) |
 
-`signIn() async throws -> LoginResponseEntity` (iOS 13+)
+**Response:** `LoginResponseEntity.data` is an `AccessTokenEntity` with `access_token`, `refresh_token`, `id_token`, `sub` and `expires_in`.
 
-`signOut(sub:completion:)` — **required:** non-empty `sub`; returns `Result<Bool>`
+### `Cidaas.WebAuth` static helpers
 
-`signOut(sub:) async throws -> Bool` (iOS 13+)
+| Method | Purpose |
+|--------|---------|
+| `handleRedirect(_ url: URL)` | Forward OAuth callback when using a **custom** browser (not needed for standard login) |
+| `authorizationURL(for:extraParameters:completion:)` | Build authorization URL without presenting browser |
+| `authorizationURL(for:extraParameters:)` async | Same, async (iOS 13+) |
 
-### Static helpers (`Cidaas.WebAuth`)
+`BrowserAuthFlow`: `.login`, `.registration`, `.social`. For `.social`, pass `provider` and `requestId` in `extraParameters`.
 
-`handleRedirect(_ url: URL)` — forward OAuth callback URLs when using a custom browser integration (not needed for standard `ASWebAuthenticationSession` login).
+### Examples
 
-`authorizationURL(for:extraParameters:completion:)`  
-`authorizationURL(for:extraParameters:) async throws -> URL` (iOS 13+)
-
-- Useful when you need URL preview or custom browser handling.
-- For `.social`, `extraParameters["provider"]` and `extraParameters["requestId"]` are required.
-
-### Completion-handler example (login)
+See [Quick Start — Browser login and logout](#quick-start) for sign-in and sign-out. Optional builder steps:
 
 ```swift
-Cidaas.shared
+// Registration — use .registration() for sign-up only, not login
+let login = try await Cidaas.shared.webAuth(delegate: self).registration().signIn()
+
+// Social login
+try await Cidaas.shared
     .webAuth(delegate: self)
-    .extraParameters(["prompt": "login", "ui_locales": "en"])
-    .signIn { result in
-        switch result {
-        case .success(result: let login):
-            print("Access token: \(login.data.access_token)")
-        case .failure(error: let error):
-            print("Login failed: \(error.localizedDescription)")
-        }
-    }
-```
-
-### Async/await example (login)
-
-```swift
-@available(iOS 13.0, *)
-func performLogin() async {
-    do {
-        let login = try await Cidaas.shared
-            .webAuth(delegate: self)
-            .extraParameters(["scopes": "openid profile email offline_access"])
-            .signIn()
-        print("Login success: \(login.data.access_token)")
-    } catch {
-        print("Login failed: \(error.localizedDescription)")
-    }
-}
-```
-
-### Async/await example (registration)
-
-Add `.registration()` only when you want the hosted sign-up flow — not for a normal login:
-
-```swift
-@available(iOS 13.0, *)
-func performRegistration() async {
-    do {
-        let login = try await Cidaas.shared
-            .webAuth(delegate: self)
-            .registration()
-            .signIn()
-        print("Registration success: \(login.data.access_token)")
-    } catch {
-        print("Registration failed: \(error.localizedDescription)")
-    }
-}
+    .social(provider: "google", requestId: "your-request-id")
+    .signIn()
 ```
 
 </details>
 
 <details>
-<summary><strong>User Accounts (<code>CidaasUsersBuilder</code>)</strong></summary>
+<summary><strong>User Accounts — <code>CidaasUsersBuilder</code></strong></summary>
+
+### Purpose
+
+Password reset and OpenID Connect userinfo.
 
 ### Entry point
 
@@ -576,119 +405,113 @@ func performRegistration() async {
 let users = Cidaas.users()
 ```
 
-### Password reset
+Requires OAuth properties from `readPropertyFile()` or `setURL(...)`.
 
-`passwordReset(_:completion:)`  
-`passwordReset(_:) async throws` (iOS 13+)
+### Methods
 
-Input enum:
-- `.initiate(InitiateResetPasswordEntity)`
-- `.validate(HandleResetPasswordEntity)`
-- `.accept(ResetPasswordEntity)`
+| Method | Required | Async (iOS 13+) | Returns |
+|--------|----------|-----------------|---------|
+| `passwordReset(_:completion:)` | `CidaasPasswordResetAction` | `passwordReset(_:)` | `CidaasPasswordResetOutcome` |
+| `fetchUserInfo(sub:completion:)` | non-empty `sub` | `fetchUserInfo(sub:)` | `UserInfoEntity` |
+| `fetchUserInfo(accessToken:completion:)` | non-empty token | `fetchUserInfo(accessToken:)` | `UserInfoEntity` |
 
-Output enum:
-- `CidaasPasswordResetOutcome.initiate(...)`
-- `CidaasPasswordResetOutcome.validate(...)`
-- `CidaasPasswordResetOutcome.accept(...)`
+### Password reset flow
 
-### Account verification
-
-`accountVerification(_:completion:)`  
-`accountVerification(_:) async throws` (iOS 13+)
-
-Input enum:
-- `.initiate(InitiateAccountVerificationEntity)`
-- `.validate(VerifyAccountEntity)`
-
-Output enum:
-- `CidaasAccountVerificationOutcome.initiate(...)`
-- `CidaasAccountVerificationOutcome.validate(...)`
-
-### User info
-
-`fetchUserInfo(sub:completion:)` / `fetchUserInfo(sub:) async throws` (iOS 13+)
-
-`fetchUserInfo(accessToken:completion:)` / `fetchUserInfo(accessToken:) async throws` (iOS 13+)
-
-### Example
+Three-step flow driven by enum cases:
 
 ```swift
-Cidaas.users().fetchUserInfo(sub: "user-sub") { result in
-    switch result {
-    case .success(result: let userInfo):
-        print("Email: \(userInfo.email)")
-    case .failure(error: let error):
-        print("UserInfo failed: \(error.localizedDescription)")
+// 1. Initiate
+let initiate = InitiateResetPasswordEntity()
+initiate.resetMedium = "email"
+initiate.email = "user@example.com"
+initiate.requestId = "your-request-id"
+initiate.processingType = "CODE"
+
+Cidaas.users().passwordReset(.initiate(initiate)) { result in
+    guard case .success(result: .initiate(let response)) = result else { return }
+    let resetRequestId = response.data.rprq
+
+    // 2. Validate with code from email/SMS
+    let validate = HandleResetPasswordEntity()
+    validate.code = "123456"
+    validate.resetRequestId = resetRequestId
+
+    Cidaas.users().passwordReset(.validate(validate)) { validateResult in
+        guard case .success(result: .validate(let vResponse)) = validateResult else { return }
+
+        // 3. Accept new password
+        let accept = ResetPasswordEntity()
+        accept.password = "NewPassword1!"
+        accept.confirmPassword = "NewPassword1!"
+        accept.exchangeId = vResponse.data.exchangeId
+        accept.resetRequestId = vResponse.data.resetRequestId
+
+        Cidaas.users().passwordReset(.accept(accept)) { _ in }
     }
 }
+```
+
+### Fetch user info
+
+```swift
+// By subject (uses stored access token for sub)
+let user = try await Cidaas.users().fetchUserInfo(sub: "user-sub-id")
+print(user.email)
+
+// By access token
+let user = try await Cidaas.users().fetchUserInfo(accessToken: token)
 ```
 
 </details>
 
 <details>
-<summary><strong>MFA (<code>CidaasMFABuilder</code>)</strong></summary>
+<summary><strong>MFA — <code>CidaasMFABuilder</code></strong></summary>
 
-### Entry point
+### Purpose
+
+MFA enrollment and step-up authentication through typed builders with cached session state between steps.
+
+### Entry points
 
 ```swift
-let mfa = Cidaas.mfa(.totp)
+let mfa = Cidaas.mfa(.totp)   // or .push, .sms, .pattern, …
+
+// Shorthand: initiation, then scan when required (pattern/push/touch/face)
+Cidaas.mfaEnrollmentSetup(.sms, accessToken: token, sub: userSub) { result in … }
 ```
 
-Verification types:
-- `.pattern`, `.push`, `.touchId`, `.totp`, `.face`, `.email`, `.sms`, `.ivr`, `.backupCode`
+**Verification types** (`CidaasMFAVerificationType`):
 
-### Root builder methods
+`.pattern`, `.push`, `.touchId`, `.totp`, `.face`, `.email`, `.sms`, `.ivr`, `.backupCode`
 
-`enrollment() -> CidaasMFAEnrollmentBuilder`
+### Root builder (`CidaasMFABuilder`)
 
-`authentication() -> CidaasMFAAuthenticationBuilder`
+| Method | Parameters | Returns |
+|--------|------------|---------|
+| `enrollment()` | — | `CidaasMFAEnrollmentBuilder` |
+| `authentication()` | — | `CidaasMFAAuthenticationBuilder` |
+| `configurations(sub:completion:)` | `sub` optional (uses enrollment or auth cache) | `Result<MFAListResponse>` |
 
-`support() -> CidaasMFASupportBuilder`
+Reuse the same `CidaasMFABuilder` instance across a multi-step flow. The builder caches `sub`, exchange ids and push selection between calls.
 
-`configurations(sub: String? = nil, completion: ...)`
-- `sub` optional; if omitted, builder uses cached `sub` from previous initiation call.
-- Fails if neither explicit nor cached `sub` is available.
+### Enrollment branch
 
-### Enrollment builder methods
+| Method | Required | Defaults | Returns |
+|--------|----------|----------|---------|
+| `initiation(accessToken:sub:completion:)` | at least one of `accessToken` or `sub` | both `""` | `CidaasMFAEnrollmentInitiationResult` |
+| `scanned(sub:exchangeId:completion:)` | `sub` + `exchangeId` (or cached from initiation) | nil | `CidaasMFAEnrollmentScannedResult` |
+| `enrollmentSetup(accessToken:sub:completion:)` | same as initiation | both `""` | `CidaasMFAEnrollmentSetupResult` — runs `scanned` only for pattern/push/touch/face |
+| `verification(…)` | `exchangeId` (or cached); type-specific pass code | see SDK | `EnrollResponse` |
 
-`initiation(accessToken: String = "", sub: String = "", completion: ...)`
-- At least one of `accessToken` or `sub` must be non-empty.
-- Caches returned identifiers for subsequent calls.
+**Scan step:** required for **PATTERN, PUSH, TOUCHID, FACE** only. SMS, email, IVR and TOTP use initiation only. Backup codes complete on initiation (no scan, no verify).
 
-`scanned(sub: String? = nil, exchangeId: String? = nil, completion: ...)`
-- Uses cached values if omitted.
+**Exchange id for verify:** use `CidaasMFAEnrollmentSetupResult.enrollmentExchangeId` after `enrollmentSetup`, or pass `exchangeId` explicitly. The SDK picks the initiation exchange for SMS/email/IVR/TOTP/backup and the scan exchange for pattern/push/touch/face.
 
-`verification(exchangeId: String? = nil, otp: String? = nil, pattern: String? = nil, pushNumber: String? = nil, photo: UIImage = UIImage(), attempt: Int = 0, localizedReason: String = "Authenticate", completion: ...)`
-- `exchangeId` required (directly or via cache).
-- `pushNumber` required for PUSH.
-- `otp/pattern` required for most non-biometric types.
+`CidaasMFAEnrollmentInitiationResult`: `sub`, `setupExchangeId`, `statusId`, `totpSecret?`, `pushSelectedNumber?`
 
-### Authentication builder methods
+`CidaasMFAEnrollmentSetupResult`: `verificationType`, `initiation`, `scanned?`, `scanWasPerformed`, `enrollmentExchangeId`
 
-`initiation(sub:requestId:usageType:completion:)` — all parameters required and non-empty.
-
-`verification(...)` — uses cached values where possible.
-
-`pushAcknowledge(exchangeId:completion:)`
-
-`pushAllow(exchangeId:completion:)`
-
-`pushReject(exchangeId:reason: String = "", completion:)`
-
-### Support builder methods
-
-Includes:
-- `deleteAll`, `delete`
-- `pendingNotifications`, `history`
-- `updateFCM(pushId:)`, `updateFCMToken(...)`
-- `passwordlessContinue(...)`
-- `timeline(...)`
-- `configuredDeviceList(...)`
-- `deleteDevice(...)`
-- `deviceConfiguredList(...)`
-- `cancelQr(...)`
-
-### Builder flow example (TOTP enrollment)
+**TOTP enrollment (step by step):**
 
 ```swift
 let mfa = Cidaas.mfa(.totp)
@@ -696,6 +519,7 @@ let mfa = Cidaas.mfa(.totp)
 mfa.enrollment().initiation(accessToken: token, sub: userSub) { initResult in
     switch initResult {
     case .success(result: let setup):
+        // Show setup.totpSecret as QR code in your UI
         mfa.enrollment().verification(
             exchangeId: setup.setupExchangeId,
             otp: "123456"
@@ -703,15 +527,122 @@ mfa.enrollment().initiation(accessToken: token, sub: userSub) { initResult in
             print(verifyResult)
         }
     case .failure(error: let error):
-        print("MFA initiation failed: \(error.localizedDescription)")
+        print(error.errorMessage)
     }
 }
 ```
 
+**Pattern enrollment (combined setup):**
+
+```swift
+let mfa = Cidaas.mfa(.pattern)
+
+mfa.enrollment().enrollmentSetup(accessToken: token, sub: userSub) { result in
+    switch result {
+    case .success(result: let setup):
+        mfa.enrollment().verification(
+            exchangeId: setup.enrollmentExchangeId,
+            pattern: encodedPattern
+        ) { verifyResult in
+            print(verifyResult)
+        }
+    case .failure(error: let error):
+        print(error.errorMessage)
+    }
+}
+```
+
+**Pass code fields for `verification()`:**
+
+| Type | Parameter |
+|------|-----------|
+| TOTP, SMS, EMAIL, IVR, BACKUP | `otp` |
+| PATTERN | `pattern` (or `otp`) |
+| PUSH | `pushNumber` (or cached value from initiation) |
+| TOUCHID, FACE | empty pass code; SDK uses biometrics via `localizedReason` |
+
+### Authentication branch
+
+Endpoint: `POST /verification-srv/authentication/{method}/initiation`
+
+| Method | Required params | Notes |
+|--------|-----------------|-------|
+| `initiation(requestId:usageType:sub:identifier:mediumId:completion:)` | `requestId`, `usageType` | See usage types below |
+| `verification(…)` | cached or explicit `exchangeId`, `requestId`, `usageType`; type-specific pass code | Uses session cache from `initiation` |
+| `pushAcknowledge(exchangeId:completion:)` | optional `exchangeId` (cached) | Call before `pushAllow` for pattern/push/touch/face |
+| `pushAllow(exchangeId:completion:)` | optional `exchangeId` (cached) | Updates cached exchange and push number |
+| `pushReject(exchangeId:reason:completion:)` | optional `exchangeId`; `reason` default `""` | Reject handoff |
+
+**Usage types** (`UsageTypes` raw values):
+
+| `usageType` | Pass | Do not pass |
+|-------------|------|-------------|
+| `INITIAL_AUTHENTICATION` | `identifier` (e.g. email), optional `mediumId` | `sub` |
+| `MULTIFACTOR_AUTHENTICATION` | masked `sub` | `identifier` |
+
+For **PATTERN, PUSH, TOUCHID, FACE** authentication call `pushAcknowledge` → `pushAllow` → `verification` as three separate steps. Do not verify with the initiation `exchange_id`.
+
+**Initial authentication example:**
+
+```swift
+let auth = Cidaas.mfa(.sms).authentication()
+
+auth.initiation(
+    requestId: requestId,
+    usageType: UsageTypes.INITIAL.rawValue,
+    identifier: "user@example.com"
+) { result in
+    guard case .success(result: let initiation) = result else { return }
+    auth.verification(exchangeId: initiation.exchangeId, otp: "123456") { verifyResult in
+        print(verifyResult)
+    }
+}
+```
+
+**Step-up MFA example:**
+
+```swift
+let auth = Cidaas.mfa(.totp).authentication()
+
+auth.initiation(
+    requestId: requestId,
+    usageType: UsageTypes.MFA.rawValue,
+    sub: maskedSubFromChallenge
+) { result in
+    guard case .success = result else { return }
+    auth.verification(otp: "123456") { verifyResult in
+        print(verifyResult)
+    }
+}
+```
+
+### Configured MFA methods
+
+`configurations(sub:completion:)` returns the user's configured MFA methods on this device (verification-srv configured list). Pass `sub` explicitly or rely on cache from an enrollment or authentication flow on the same builder.
+
+```swift
+Cidaas.mfa(.totp).configurations(sub: userSub) { result in
+    switch result {
+    case .success(result: let list):
+        print(list.data.configured_list)
+    case .failure(error: let error):
+        print(error.errorMessage)
+    }
+}
+```
+
+> MFA APIs use completion handlers only. Wrap with `withCheckedThrowingContinuation` for async in your app.
+
 </details>
 
 <details>
-<summary><strong>Device Registration (<code>CidaasDevice</code>)</strong></summary>
+<summary><strong>Device Registration — <code>CidaasDevice</code></strong></summary>
+
+### Purpose
+
+Registers the current device using server-directed attestation (Apple App Attest or Firebase App Check) plus DPoP and biometric proof headers.
+
+**Requires:** iOS 14+, physical device, `NSFaceIDUsageDescription` in host app `Info.plist`.
 
 ### Entry point
 
@@ -719,71 +650,380 @@ mfa.enrollment().initiation(accessToken: token, sub: userSub) { initResult in
 let device = Cidaas.device()
 ```
 
-### Public methods
+### Methods
 
-`registerDevice(clientId:pushId:completion:)` (iOS 14+)
+| Method | Required params | Returns | Errors |
+|--------|-----------------|---------|--------|
+| `registerDevice(clientId:pushId:completion:)` | non-empty `clientId`, `pushId` | `Result<DeviceRegistrationVerifyResult>` | App Attest unavailable, missing config, network |
+| `registerDevice(clientId:pushId:)` async | same | `DeviceRegistrationVerifyResult` | throws `WebAuthError` or underlying error |
 
-`registerDevice(clientId:pushId:) async throws -> DeviceRegistrationVerifyResult` (iOS 14+)
-
-Parameters:
-- `clientId` (**required**, non-empty)
-- `pushId` (**required**, non-empty FCM token mapped by your integration)
-
-Return:
-- `DeviceRegistrationVerifyResult` with `deviceId`
-
-Failures can occur for:
-- missing/invalid input
-- missing `DomainURL` in SDK properties
-- unsupported App Attest environment
-- network/service failures
-- malformed service responses
-
-### Minimal setup example (completion)
-
-```swift
-Cidaas.device().registerDevice(clientId: "your-client-id", pushId: pushToken) { result in
-    switch result {
-    case .success(result: let value):
-        print("Registered deviceId: \(value.deviceId)")
-    case .failure(error: let error):
-        print("Device registration failed: \(error.localizedDescription)")
-    }
-}
-```
-
-### Async example
-
-```swift
-@available(iOS 14.0, *)
-func registerDevice(pushToken: String) async {
-    do {
-        let result = try await Cidaas.device().registerDevice(
-            clientId: "your-client-id",
-            pushId: pushToken
-        )
-        print("Registered deviceId: \(result.deviceId)")
-    } catch {
-        print("Device registration failed: \(error.localizedDescription)")
-    }
-}
-```
+**Success response:** `DeviceRegistrationVerifyResult` with `deviceId`.
 
 </details>
 
 ---
 
-<a id="configuration-flow"></a>
+<a id="core-apis"></a>
 
-## Configuration Flow (Recommended Order)
+## Core APIs
 
-1. Ensure `Cidaas.plist` exists in the app bundle (or call `setURL(...)`).
-2. Call `Cidaas.shared.readPropertyFile()` and wait until OAuth properties are loaded.
-3. For browser auth, always pass a live `UIViewController`.
-4. For device registration:
-   - run on iOS 14+ physical device
-   - include `NSFaceIDUsageDescription`
-   - ensure push token is available and non-empty
+`Cidaas.shared` (`Core/Views/Cidaas.swift`) is the root singleton for configuration and token management. Browser auth, MFA, password reset and user info use v3 builders — see [Module API Guide (v3)](#module-api-guide).
+
+Configuration: see [SDK Configuration](#sdk-configuration).
+
+### Token and session management
+
+| Method | Required params | Returns | Notes |
+|--------|-----------------|---------|-------|
+| `getAccessToken(sub:callback:)` | user `sub` | `Result<LoginResponseEntity>` | Reads token stored by SDK for sub |
+| `getAccessToken(refreshToken:callback:)` | refresh token | `Result<LoginResponseEntity>` | Token refresh |
+| `getAccessToken(requestId:socialToken:provider:viewType:extraParams:callback:)` | social flow fields | `Result<LoginResponseEntity>` | Social token exchange |
+| `setAccessToken(accessTokenEntity:callback:)` | `AccessTokenEntity` | `Result<LoginResponseEntity>` | Persist token in SDK storage |
+
+**Refresh token example:**
+
+```swift
+Cidaas.shared.getAccessToken(refreshToken: storedRefreshToken) { result in
+    switch result {
+    case .success(result: let login):
+        let newToken = login.data.access_token
+    case .failure(error: let error):
+        print(error.errorMessage)
+    }
+}
+```
+
+### Device authentication check
+
+Local biometric or passcode check. Not the HTTP `Biometric` proof header.
+
+```swift
+Cidaas.shared.askDeviceAuthentication(
+    localizedReason: "Unlock your account",
+    invalidateAuthenticationContext: false
+) { response in
+    // Inspect DeviceAuthenticationResponseEntity
+}
+```
+
+---
+
+<a id="embedded-webview-login"></a>
+
+## Embedded WebView Login
+
+Use `CidaasView` when OAuth runs inside your app instead of the system browser. There is no v3 wrapper.
+
+**Location:** `Core/Views/CidaasView.swift`
+
+### Setup
+
+1. Add `CidaasView` in your storyboard or in code
+2. Set `loaderDelegate` for loading UI
+3. Forward `WKNavigationDelegate` calls to the view
+4. Call `loginWithEmbeddedBrowser`
+
+### Key APIs
+
+| API | Required | Default | Purpose |
+|-----|----------|---------|---------|
+| `loginWithEmbeddedBrowser(delegate:extraParams:callback:)` | `WKNavigationDelegate` | `extraParams` `[:]` | Start embedded OAuth login |
+| `loaderDelegate` | Yes for loading UI | — | `CidaasLoaderDelegate` |
+| `ENABLE_BACK_BUTTON` | No | from `DBHelper` | Show back button in WebView |
+| `enableNativeFacebook` / `enableNativeGoogle` | No | `false` | Route social URLs to native SDKs |
+| `logout(sub:post_logout_url:)` | sub | — | WebView logout by sub |
+| `logout(accessToken:post_logout_url:)` | token | — | WebView logout by token |
+
+### WKNavigationDelegate forwarding
+
+Forward navigation events from your view controller:
+
+```swift
+@IBOutlet var cidaasView: CidaasView!
+
+func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    cidaasView.webView(webView, didStartProvisionalNavigation: navigation)
+}
+
+func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    cidaasView.webView(webView, didFail: navigation, withError: error)
+}
+
+func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+    cidaasView.webView(webView, decidePolicyFor: navigationAction, decisionHandler: decisionHandler)
+}
+
+func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    cidaasView.webView(webView, didFinish: navigation)
+}
+```
+
+### Login example
+
+```swift
+cidaasView.loaderDelegate = self
+cidaasView.loginWithEmbeddedBrowser(delegate: self) { result in
+    switch result {
+    case .success(result: let login):
+        print(login.data.access_token)
+    case .failure(error: let error):
+        print(error.errorMessage)
+    }
+}
+```
+
+### Native social delegates
+
+When `enableNativeFacebook` or `enableNativeGoogle` is `true`:
+
+- `CidaasView.facebookDelegate` — `login(viewType:requestId:callback:)` and `logout()`
+- `CidaasView.googleDelegate` — `login(viewType:callback:)` and `logout()`
+
+---
+
+<a id="native-apis"></a>
+
+## Native APIs
+
+`CidaasNative.shared` (`V2/Native/Views/Native.swift`) exposes REST APIs for native UI where your app renders login and registration screens. Password reset and user info use v3 `Cidaas.users()`.
+
+### Authentication
+
+| Method | Required params | Returns |
+|--------|-----------------|---------|
+| `loginWithCredentials(incomingData:callback:)` | `LoginEntity` (username, password, requestId, …) | `Result<LoginResponseEntity>` |
+| `logout(sub:callback:)` | `sub` | `Result<Bool>` |
+| `logout(access_token:callback:)` | access token | `Result<Bool>` |
+| `getRequestId(extraParams:callback:)` | — | `Result<RequestIdResponseEntity>` |
+| `getClientInfo(requestId:callback:)` | `requestId` | `Result<ClientInfoResponseEntity>` |
+| `getTenantInfo(callback:)` | — | `Result<TenantInfoResponseEntity>` |
+| `getEndpoints(callback:)` | — | `Result<EndpointsResponseEntity>` |
+
+**Native credentials login:**
+
+```swift
+let login = LoginEntity()
+login.username = "user@example.com"
+login.password = "password"
+login.username_type = "email"   // required
+login.requestId = "your-request-id"
+
+CidaasNative.shared.loginWithCredentials(incomingData: login) { result in
+    switch result {
+    case .success(result: let response):
+        print(response.data.access_token)
+    case .failure(error: let error):
+        print(error.errorMessage)
+    }
+}
+```
+
+### Registration and profile
+
+| Method | Required params | Returns |
+|--------|-----------------|---------|
+| `getRegistrationFields(acceptlanguage:requestId:callback:)` | locale, requestId | `Result<RegistrationFieldsResponseEntity>` |
+| `registerUser(requestId:incomingData:callback:)` | requestId, `RegistrationEntity` | `Result<RegistrationResponseEntity>` |
+| `updateUser(access_token:incomingData:callback:)` | token, `RegistrationEntity` | `Result<UpdateUserResponseEntity>` |
+| `changePassword(access_token:incomingData:callback:)` | token, `ChangePasswordEntity` | `Result<ChangePasswordResponseEntity>` |
+
+### Account linking
+
+| Method | Required params | Returns |
+|--------|-----------------|---------|
+| `linkAccount(access_token:incomingData:callback:)` | token, `LinkAccountEntity` | `Result<LinkAccountResponseEntity>` |
+| `getLinkedUsers(access_token:sub:callback:)` | token, sub | `Result<LinkedUserListResponseEntity>` |
+| `unlinkAccount(access_token:identityId:callback:)` | token, identity id | `Result<LinkAccountResponseEntity>` |
+
+### Deduplication
+
+| Method | Required params | Returns |
+|--------|-----------------|---------|
+| `getDeduplicationDetails(track_id:callback:)` | track id | `Result<DeduplicationDetailsResponseEntity>` |
+| `registerDeduplication(track_id:callback:)` | track id | `Result<RegistrationResponseEntity>` |
+| `deduplicationLogin(incomingData:callback:)` | `LoginEntity` | `Result<LoginResponseEntity>` |
+
+### User activity
+
+| Method | Required params | Returns |
+|--------|-----------------|---------|
+| `getUserActivity(accessToken:incomingData:callback:)` | token, `UserActivityEntity` | `Result<UserActivityResponseEntity>` |
+
+---
+
+<a id="consent"></a>
+
+## Consent
+
+`CidaasConsent.shared` (`V2/Consent/Views/Consent.swift`) handles OAuth consent during authorization. No v3 wrapper exists.
+
+| Method | Required | Returns | Purpose |
+|--------|----------|---------|---------|
+| `getConsentDetails(incomingData:callback:)` | `ConsentDetailsRequestEntity` | `Result<ConsentDetailsResponseEntity>` | Fetch consent screen data |
+| `acceptConsent(incomingData:callback:)` | `AcceptConsentEntity` | `Result<AcceptConsentResponseEntity>` | User accepts consent |
+| `consentContinue(incomingData:callback:)` | `ConsentContinueEntity` | `Result<LoginResponseEntity>` | Complete OAuth after consent → tokens |
+
+**Typical flow:**
+
+```swift
+// 1. Load consent details (consent_id, sub, requestId, track_id from authz redirect)
+CidaasConsent.shared.getConsentDetails(incomingData: detailsRequest) { result in
+    guard case .success(result: let details) = result else { return }
+    // Render consent UI from details.data
+
+    // 2. User accepts
+    CidaasConsent.shared.acceptConsent(incomingData: acceptEntity) { acceptResult in
+        guard case .success = acceptResult else { return }
+
+        // 3. Continue OAuth
+        CidaasConsent.shared.consentContinue(incomingData: continueEntity) { continueResult in
+            switch continueResult {
+            case .success(result: let login):
+                print(login.data.access_token)
+            case .failure(error: let error):
+                print(error.errorMessage)
+            }
+        }
+    }
+}
+```
+
+Populate `ConsentDetailsRequestEntity`, `AcceptConsentEntity` and `ConsentContinueEntity` from authz redirect parameters.
+
+---
+
+<a id="asyncawait-helpers"></a>
+
+## Async/Await Helpers
+
+`Cidaas+AsyncAwait.swift` adds `@available(iOS 13.0, *)` async wrappers on `Cidaas.shared` for token refresh and native bootstrap helpers. Browser auth, user info and password reset use v3 builder async methods instead.
+
+| Method | Returns | Wraps |
+|--------|---------|-------|
+| `getClientInfo(requestId:)` | `ClientInfoResponseDataEntity` | `CidaasNative.shared.getClientInfo` |
+| `getRequestID()` | `String` | `CidaasNative.shared.getRequestId` |
+| `getAccessToken(with refreshToken:)` | `AccessTokenEntity` | Token refresh |
+| `getSocialLoginProviders()` | `[String]` | requestId + clientInfo |
+| `logout(accessToken:)` | — | `CidaasNative.shared.logout(access_token:)` |
+
+**Example:**
+
+```swift
+@available(iOS 13.0, *)
+func bootstrapNativeFlow() async throws {
+    let requestId = try await Cidaas.shared.getRequestID()
+    let providers = try await Cidaas.shared.getSocialLoginProviders()
+    print(requestId, providers)
+}
+```
+
+For browser login use `Cidaas.shared.webAuth(delegate:).signIn()` async. For user info use `Cidaas.users().fetchUserInfo(...)`.
+
+---
+
+<a id="shared-models-and-storage"></a>
+
+## Shared Models and Storage
+
+### `Result<T>`
+
+All callback-based SDK APIs return:
+
+```swift
+public enum Result<T> {
+    case success(result: T)
+    case failure(error: WebAuthError)
+}
+```
+
+### `WebAuthError`
+
+Inspect `errorCode`, `statusCode`, `errorMessage` and nested `error: ErrorResponseEntity` for API payloads.
+
+### Token models
+
+| Type | Key fields | Usage |
+|------|------------|-------|
+| `LoginResponseEntity` | `success`, `status`, `data: AccessTokenEntity` | Login callbacks |
+| `AccessTokenEntity` | `access_token`, `refresh_token`, `id_token`, `sub`, `expires_in` | Token payload |
+| `AccessTokenModel` | Same fields + `AccessTokenModel.shared` | SDK session storage |
+
+### Device model
+
+`DeviceInfoModel` — persisted via `DBHelper`:
+
+| Field | Purpose |
+|-------|---------|
+| `deviceId` | SDK device identifier |
+| `deviceMake`, `deviceModel`, `deviceVersion` | Device metadata |
+| `pushNotificationId` | FCM/APNs token used in MFA and device flows |
+
+```swift
+let info = DBHelper.shared.getDeviceInfo()
+DBHelper.shared.setFCM(fcmToken: pushToken)
+```
+
+### `DBHelper` (integrator-relevant)
+
+| Method | Purpose |
+|--------|---------|
+| `getPropertyFile()` / `setPropertyFile(_:)` | OAuth config dictionary |
+| `getAccessToken(key:)` / `setAccessToken(accessTokenModel:)` | Per-user token by sub key |
+| `getDeviceInfo()` / `setDeviceInfo(_:)` | Device metadata |
+| `getFCM()` / `setFCM(_:)` | Push token storage |
+| `getEnableLog()` / `setEnableLog(_:)` | Logging flag |
+| `getEnablePkce()` / `setEnablePkce(_:)` | PKCE flag |
+
+---
+
+<a id="advanced-configuration"></a>
+
+## Advanced Configuration
+
+### TLS public-key pinning
+
+Pin SHA-256 SPKI hashes (Base64). No `.cer` files in the app bundle.
+
+```swift
+Cidaas.shared.setPublicKeyPinning(
+    trustedPublicKeyHashes: ["YOUR_PRIMARY_SPKI_SHA256_BASE64"],
+    pinnedHosts: ["your-tenant.cidaas.de"],
+    validateHost: true,
+    performDefaultValidation: true
+)
+```
+
+| Parameter | Required | Default | Notes |
+|-----------|----------|---------|-------|
+| `trustedPublicKeyHashes` | No | `CidaasPublicKeyPinningConfiguration.defaultTrustedHashes` | Replace placeholder hashes before production |
+| `pinnedHosts` | No | host from `DomainURL` in plist | Hostname only, no scheme |
+| `validateHost` | No | `true` | Recommended in production |
+| `performDefaultValidation` | No | `true` | System trust + pin check |
+
+```swift
+Cidaas.shared.clearPublicKeyPinning()   // disable pinning
+```
+
+Call `setPublicKeyPinning` after OAuth properties load.
+
+### DPoP and biometric HTTP proofs
+
+Enable `useDpop` and `useBiometric` on `Cidaas.shared` (see [SDK Configuration](#sdk-configuration)), then:
+
+```swift
+let user = try await Cidaas.users().fetchUserInfo(sub: sub)
+```
+
+Turn flags off when later calls should not prompt for biometrics.
+
+### Custom authorization URL
+
+Build or handle authorization URLs with `Cidaas.WebAuth.authorizationURL(for:extraParameters:)` and `Cidaas.WebAuth.handleRedirect(_:)` — see [Browser Authentication](#module-api-guide).
+
+### Debug logging
+
+Set `Cidaas.shared.ENABLE_LOG = true` — see [SDK Configuration](#sdk-configuration).
 
 ---
 
@@ -791,38 +1031,126 @@ func registerDevice(pushToken: String) async {
 
 ## Error Handling
 
-All completion APIs return `Result<T>` (SDK result type). A robust pattern is:
+### Result-based APIs
+
+Completion handlers return `Result<T>` with `WebAuthError` on failure. Pattern matches [Quick Start](#quick-start) login handling:
 
 ```swift
-func handle(_ error: Error) {
-    if let webAuth = error as? WebAuthError {
-        print("SDK error code: \(webAuth.errorCode)")
-        print("SDK status: \(webAuth.statusCode)")
-        print("SDK message: \(webAuth.errorMessage)")
-    } else {
-        print("Error: \(error.localizedDescription)")
-    }
+func handleSDKError(_ error: WebAuthError) {
+    print("Code: \(error.errorCode)")
+    print("Status: \(error.statusCode)")
+    print("Message: \(error.errorMessage)")
 }
 ```
 
-For async APIs, use `do/try/catch` and re-use the same typed error handling.
+### Async APIs
+
+Async methods throw `WebAuthError`:
+
+```swift
+do {
+    let login = try await Cidaas.shared.webAuth(delegate: self).signIn()
+} catch let error as WebAuthError {
+    handleSDKError(error)
+} catch {
+    print(error.localizedDescription)
+}
+```
+
+### Common error sources
+
+| Situation | Typical error |
+|-----------|---------------|
+| Missing `Cidaas.plist` | `fileNotFoundException()` — code 10001 |
+| Missing plist key | `propertyMissingException()` |
+| User cancelled browser | `userCancelledException()` |
+| Network timeout | `netWorkTimeoutException()` |
+| MFA validation | `serviceFailureException` — status 417 |
+| App Attest unavailable | `serviceFailureException` — status 400 |
+
 
 ---
 
-<a id="security-setup-notes"></a>
+<a id="security-setup"></a>
 
-## Security Setup Notes
+## Security Setup
 
-### Browser and redirect
+### Info.plist
 
-- Redirect URI in `Cidaas.plist` must match your tenant app registration.
-- The SDK handles the OAuth redirect automatically for standard browser login via `ASWebAuthenticationSession`.
+| Key | When required |
+|-----|---------------|
+| `CFBundleURLTypes` | Always. Must match the `RedirectURL` scheme. |
+| `NSFaceIDUsageDescription` | Device registration and `useBiometric` proofs |
+
+Example:
+
+```xml
+<key>NSFaceIDUsageDescription</key>
+<string>Used to register this device securely with your account.</string>
+```
+
+### Redirect URLs
+
+Match `RedirectURL` and `PostLogoutRedirectURL` in `Cidaas.plist` to the portal. Prefer HTTPS universal links in production.
+
+### Token storage
+
+- Store tokens in the Keychain, not UserDefaults
+- Don't log tokens in production when `ENABLE_LOG` is on
 
 ### Device registration
 
-- Requires App Attest support (iOS 14+ and supported device/environment).
-- Uses DPoP + biometric proof headers internally for verification step.
-- Host app must provide `NSFaceIDUsageDescription`.
+Requires iOS 14+, physical device and `NSFaceIDUsageDescription`. See [Device Registration](#module-api-guide). Simulator usually can't complete App Attest.
+
+### TLS pinning
+
+- Replace placeholder hashes in `CidaasPublicKeyPinningConfiguration` before release
+- Keep a backup hash for certificate rotation
+
+---
+
+<a id="troubleshooting"></a>
+
+## Troubleshooting
+
+<details>
+<summary><strong>Common mistakes</strong></summary>
+
+**`Cidaas` module not found**
+- Add the `Cidaas` package under **Package Dependencies** and link it to your app target
+- Clean build (⌘+Shift+K) and rebuild
+
+**`file not found` / property errors**
+- Add `Cidaas.plist` to the app target with all required keys
+- Include `PostLogoutRedirectURL` when loading from plist
+- Call `readPropertyFile()` before v3 APIs
+
+**Browser never returns to app**
+- Match redirect URL across plist, portal and `Info.plist` URL scheme
+- Check scheme spelling (for example `myapp` vs `myApp`)
+
+**`webAuth` delegate errors**
+- Pass a live view controller. Don't use a deallocated presenter.
+
+**Social login fails**
+- `provider` and `requestId` must both be non-empty
+
+**MFA step fails with 417**
+- Provide cached `sub`, `exchangeId` or type-specific fields (`otp`, `pushNumber`, `pattern`, …)
+- Reuse the same `CidaasMFABuilder` across enrollment or authentication steps
+- For `INITIAL_AUTHENTICATION` pass `identifier` only; for `MULTIFACTOR_AUTHENTICATION` pass masked `sub` only
+- For pattern/push/touch/face auth call `pushAcknowledge` and `pushAllow` before `verification`
+
+**Device registration fails immediately**
+- Use a physical device with App Attest support (not Simulator)
+- Set non-empty `clientId` and `pushId`
+- Add `NSFaceIDUsageDescription`
+- Load `DomainURL` via `readPropertyFile()` or `setURL(...)`
+
+**Firebase provider registration fails**
+- Set `CidaasDevice.firebaseAppCheckTokenProvider` before `registerDevice`
+
+</details>
 
 ---
 
@@ -833,37 +1161,16 @@ For async APIs, use `do/try/catch` and re-use the same typed error handling.
 <details>
 <summary><strong>Migration checklist</strong></summary>
 
-Cidaas V3 adjusts response handling on some service calls. To migrate:
-
-1. Ensure your Cidaas **server instance** is at least **3.97.0** (check the service portal; contact support if an upgrade is needed).
-2. Use **cidaas-ios-sdk** version **1.3.2** or later.
-3. Add `CidaasVersion` to `Cidaas.plist`:
+1. Cidaas **server** at least **3.97.0**
+2. **cidaas-ios-sdk** at least **1.3.2**
+3. Add to `Cidaas.plist`:
 
 ```xml
 <key>CidaasVersion</key>
 <string>3</string>
 ```
 
-Example full plist:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>DomainURL</key>
-    <string>Your Domain URL</string>
-    <key>RedirectURL</key>
-    <string>Your redirect url</string>
-    <key>ClientId</key>
-    <string>Your client id</string>
-    <key>PostLogoutRedirectURL</key>
-    <string>Your redirect url</string>
-    <key>CidaasVersion</key>
-    <string>3</string>
-</dict>
-</plist>
-```
+4. Replace legacy browser and MFA calls with v3 builders — see [API Choice Guide](#api-choice-guide).
 
 </details>
 
@@ -873,14 +1180,26 @@ Example full plist:
 
 ## Getting Client Id and URLs
 
-When integrating your business app, you typically create an **App / Client** in the Cidaas portal and configure:
-
-- **Scopes** (e.g. `openid`, `profile`, `email`, `offline_access`)
-- **Roles** and **grant types**
-- **Redirect URLs** and **logout redirect URLs**
-
-The portal generates the **Client ID** and accepts the **redirect URLs** you register. Copy those values into `Cidaas.plist` and your Xcode URL scheme configuration.
+Create an **App / Client** in the Cidaas portal and configure scopes, grant types and roles for your app. Copy the **Client ID** and **Domain URL** into `Cidaas.plist` (see [Quick Start](#quick-start) for plist keys and redirect URLs).
 
 ---
 
-This documentation intentionally covers only `Cidaas/Classes/v3/`. For legacy V2 flows (embedded WebView, native UI, verification) see the linked guides in the repository history or `README.old.md`.
+<a id="api-choice-guide"></a>
+
+## API Choice Guide
+
+| Use case | API |
+|----------|-----|
+| Browser login | `Cidaas.shared.webAuth(delegate:).signIn` |
+| Browser registration | `.webAuth(delegate:).registration().signIn` |
+| Social login (browser) | `.webAuth(delegate:).social(...).signIn` |
+| Login inside app WebView | `CidaasView.loginWithEmbeddedBrowser` |
+| Native username/password | `CidaasNative.shared.loginWithCredentials` |
+| MFA enrollment / authentication / configured list | `Cidaas.mfa(.totp).enrollment()…` / `.authentication()…` / `.configurations(sub:)` |
+| Password reset | `Cidaas.users().passwordReset(...)` |
+| User info | `Cidaas.users().fetchUserInfo(...)` |
+| Device registration | `Cidaas.device().registerDevice(...)` |
+| OAuth consent | `CidaasConsent.shared` |
+| Token refresh | `Cidaas.shared.getAccessToken(refreshToken:)` or `getAccessToken(with:)` async |
+| Dynamic registration form | `CidaasNative.getRegistrationFields` + `registerUser` |
+| Link / unlink identities | `CidaasNative.linkAccount` / `unlinkAccount` |
