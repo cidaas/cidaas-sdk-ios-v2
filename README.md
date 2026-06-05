@@ -35,9 +35,7 @@ Integrate the Cidaas iOS SDK into your app. Use **v3 builders** in `Cidaas/Class
 
 ---
 
-<a id="quick-start"></a>
-
-## Quick Start
+<h2 id="quick-start">Quick Start</h2>
 
 Get **browser login** working with v3 `webAuth`. Follow the steps below in order. Detailed plist keys, portal settings and API reference live in linked sections — not repeated here.
 
@@ -53,7 +51,7 @@ Pick a **Bundle Identifier** you can register in the Cidaas portal and in redire
 
 ### Step 2 — Add the Cidaas SDK
 
-Add the **`Cidaas`** package with Swift Package Manager — see [Installation](#sdk-module-map). Link the **`Cidaas`** library to your app target. CocoaPods isn't supported.
+Add the **`Cidaas`** package with Swift Package Manager — see [Installation](#installation). Link the **`Cidaas`** library to your app target. CocoaPods isn't supported.
 
 ```swift
 import Cidaas
@@ -63,7 +61,7 @@ import Cidaas
 
 In the Cidaas admin portal create or open an **App / Client**. Register allowed redirect and logout redirect URLs for your app. See [Getting Client Id and URLs](#getting-client-id-and-urls) for Client ID, Domain URL, scopes and grant types.
 
-### Step 4 — Add app configuration
+<h3 id="quick-start-step-4">Step 4 — Add app configuration</h3>
 
 Add `Cidaas.plist` to your app target and register the redirect URL scheme in `Info.plist`. Full templates, key reference and URL scheme setup are in [SDK Configuration](#sdk-configuration).
 
@@ -77,7 +75,7 @@ Cidaas.shared.readPropertyFile()
 
 The SDK loads `Cidaas.plist` asynchronously. Wait until OAuth properties are available before calling `webAuth`. Programmatic config and runtime flags: [SDK Configuration](#sdk-configuration).
 
-### Step 6 — Implement login and logout
+<h3 id="quick-start-step-6">Step 6 — Implement login and logout</h3>
 
 Present login from a live view controller. The SDK uses `ASWebAuthenticationSession` and handles the OAuth redirect.
 
@@ -114,7 +112,7 @@ Cidaas.shared
     }
 ```
 
-Registration, social login and async `signIn()` — [Browser Authentication](#module-api-guide-v3). Error handling — [Error Handling](#error-handling).
+Registration, social login and async `signIn()` — [Browser Authentication](#browser-authentication). Error handling — [Error Handling](#error-handling).
 
 ### Step 7 — Run your app
 
@@ -124,9 +122,7 @@ Build and run in Xcode (⌘+R). Tap your login action, complete sign-in in the s
 
 ---
 
-<a id="platform-requirements"></a>
-
-## Platform Requirements
+<h2 id="platform-requirements">Platform Requirements</h2>
 
 | Capability | Minimum iOS | Notes |
 |------------|-------------|-------|
@@ -139,9 +135,7 @@ Build and run in Xcode (⌘+R). Tap your login action, complete sign-in in the s
 
 ---
 
-<a id="sdk-module-map"></a>
-
-## SDK Module Map
+<h2 id="sdk-module-map">SDK Module Map</h2>
 
 The SDK ships as one **`Cidaas`** Swift Package with three layers. Use **v3** for browser auth, MFA, user accounts and device registration.
 
@@ -171,9 +165,9 @@ The SDK ships as one **`Cidaas`** Swift Package with three layers. Use **v3** fo
 | `CidaasNative.shared` | Native credentials login, registration, link/unlink |
 | `CidaasConsent.shared` | Consent details, accept, continue |
 
-v3 completion APIs return the SDK `Result<T>` type — see [Shared Models](#shared-models-and-storage).
+v3 completion APIs return the SDK `Result<T>` type — see [Shared Models and Storage](#shared-models-and-storage).
 
-### Installation
+<h3 id="installation">Installation</h3>
 
 The SDK ships through **Swift Package Manager** only:
 
@@ -185,17 +179,13 @@ Select the **`Cidaas`** library product when adding the package.
 
 ---
 
-<a id="next-steps"></a>
-
-## Next Steps
+<h2 id="next-steps">Next Steps</h2>
 
 After browser login works, open the [Module API Guide v3](#module-api-guide-v3) for MFA, user accounts and device registration.
 
 ---
 
-<a id="builder-pattern"></a>
-
-## Builder Pattern
+<h2 id="builder-pattern">Builder Pattern</h2>
 
 v3 uses fluent builders. Chain configuration methods, then call a **terminal method** to run the flow.
 
@@ -218,7 +208,7 @@ Cidaas.mfa(.totp)
     → configurations(sub:) on the root builder
 ```
 
-MFA builders cache `sub`, exchange ids and push selection between steps — see [MFA](#module-api-guide-v3).
+MFA builders cache `sub`, exchange ids and push selection between steps — see [MFA](#mfa).
 
 ### User accounts
 
@@ -238,11 +228,9 @@ Single public method. Internally runs initiate → attestation → verify with D
 
 ---
 
-<a id="sdk-configuration"></a>
+<h2 id="sdk-configuration">SDK Configuration</h2>
 
-## SDK Configuration
-
-Load configuration from `Cidaas.plist` or set it on `Cidaas.shared`. Use this section when completing [Quick Start — Step 4](#quick-start).
+Load configuration from `Cidaas.plist` or set it on `Cidaas.shared`. Use this section when completing [Quick Start — Step 4](#quick-start-step-4).
 
 ### `Cidaas.plist`
 
@@ -337,10 +325,9 @@ Cidaas.shared.biometricProofLocalizedReason = "Verify your identity to continue"
 
 ---
 
-<a id="module-api-guide-v3"></a>
+<h2 id="module-api-guide-v3">Module API Guide v3</h2>
 
-## Module API Guide v3
-
+<a id="browser-authentication"></a>
 <details>
 <summary><strong>Browser Authentication — <code>CidaasWebAuthBuilder</code></strong></summary>
 
@@ -391,7 +378,7 @@ Call zero or one flow selector and any number of `extraParameters` calls:
 
 ### Examples
 
-Sign-in and sign-out samples are in [Quick Start — Step 6](#quick-start). Optional builder steps:
+Sign-in and sign-out samples are in [Quick Start — Step 6](#quick-start-step-6). Optional builder steps:
 
 ```swift
 // Registration — use .registration() for sign-up only, not login
@@ -406,6 +393,7 @@ try await Cidaas.shared
 
 </details>
 
+<a id="user-accounts"></a>
 <details>
 <summary><strong>User Accounts — <code>CidaasUsersBuilder</code></strong></summary>
 
@@ -478,6 +466,7 @@ let user = try await Cidaas.users().fetchUserInfo(accessToken: token)
 
 </details>
 
+<a id="mfa"></a>
 <details>
 <summary><strong>MFA — <code>CidaasMFABuilder</code></strong></summary>
 
@@ -649,6 +638,7 @@ Cidaas.mfa(.totp).configurations(sub: userSub) { result in
 
 </details>
 
+<a id="device-registration"></a>
 <details>
 <summary><strong>Device Registration — <code>CidaasDevice</code></strong></summary>
 
@@ -677,9 +667,7 @@ let device = Cidaas.device()
 
 ---
 
-<a id="core-apis"></a>
-
-## Core APIs
+<h2 id="core-apis">Core APIs</h2>
 
 `Cidaas.shared` (`Core/Views/Cidaas.swift`) is the root singleton for configuration and token management. Browser auth, MFA, password reset and user info use v3 builders — see [Module API Guide v3](#module-api-guide-v3).
 
@@ -722,9 +710,7 @@ Cidaas.shared.askDeviceAuthentication(
 
 ---
 
-<a id="embedded-webview-login"></a>
-
-## Embedded WebView Login
+<h2 id="embedded-webview-login">Embedded WebView Login</h2>
 
 Use `CidaasView` when OAuth runs inside your app instead of the system browser. There is no v3 wrapper.
 
@@ -796,9 +782,7 @@ When `enableNativeFacebook` or `enableNativeGoogle` is `true`:
 
 ---
 
-<a id="native-apis"></a>
-
-## Native APIs
+<h2 id="native-apis">Native APIs</h2>
 
 `CidaasNative.shared` (`V2/Native/Views/Native.swift`) exposes REST APIs for native UI where your app renders login and registration screens. Password reset and user info use v3 `Cidaas.users()`.
 
@@ -866,9 +850,7 @@ CidaasNative.shared.loginWithCredentials(incomingData: login) { result in
 
 ---
 
-<a id="consent"></a>
-
-## Consent
+<h2 id="consent">Consent</h2>
 
 `CidaasConsent.shared` (`V2/Consent/Views/Consent.swift`) handles OAuth consent during authorization. No v3 wrapper exists.
 
@@ -907,9 +889,7 @@ Populate `ConsentDetailsRequestEntity`, `AcceptConsentEntity` and `ConsentContin
 
 ---
 
-<a id="asyncawait-helpers"></a>
-
-## Async/Await Helpers
+<h2 id="asyncawait-helpers">Async/Await Helpers</h2>
 
 `Cidaas+AsyncAwait.swift` adds `@available(iOS 13.0, *)` async wrappers on `Cidaas.shared` for token refresh and native bootstrap helpers. Browser auth, user info and password reset use v3 builder async methods instead.
 
@@ -936,9 +916,7 @@ For browser login use `Cidaas.shared.webAuth(delegate:).signIn()` async. For use
 
 ---
 
-<a id="shared-models-and-storage"></a>
-
-## Shared Models and Storage
+<h2 id="shared-models-and-storage">Shared Models and Storage</h2>
 
 ### `Result<T>`
 
@@ -991,9 +969,7 @@ DBHelper.shared.setFCM(fcmToken: pushToken)
 
 ---
 
-<a id="advanced-configuration"></a>
-
-## Advanced Configuration
+<h2 id="advanced-configuration">Advanced Configuration</h2>
 
 ### TLS public-key pinning
 
@@ -1033,7 +1009,7 @@ Turn flags off when later calls should not prompt for biometrics.
 
 ### Custom authorization URL
 
-Build or handle authorization URLs with `Cidaas.WebAuth.authorizationURL(for:extraParameters:)` and `Cidaas.WebAuth.handleRedirect(_:)` — see [Browser Authentication](#module-api-guide-v3).
+Build or handle authorization URLs with `Cidaas.WebAuth.authorizationURL(for:extraParameters:)` and `Cidaas.WebAuth.handleRedirect(_:)` — see [Browser Authentication](#browser-authentication).
 
 ### Debug logging
 
@@ -1041,13 +1017,11 @@ Set `Cidaas.shared.ENABLE_LOG = true` — see [SDK Configuration](#sdk-configura
 
 ---
 
-<a id="error-handling"></a>
-
-## Error Handling
+<h2 id="error-handling">Error Handling</h2>
 
 ### Result-based APIs
 
-Completion handlers return `Result<T>` with `WebAuthError` on failure. Pattern matches [Quick Start — Step 6](#quick-start):
+Completion handlers return `Result<T>` with `WebAuthError` on failure. Pattern matches [Quick Start — Step 6](#quick-start-step-6):
 
 ```swift
 func handleSDKError(_ error: WebAuthError) {
@@ -1085,9 +1059,7 @@ do {
 
 ---
 
-<a id="security-setup"></a>
-
-## Security Setup
+<h2 id="security-setup">Security Setup</h2>
 
 ### Info.plist
 
@@ -1114,7 +1086,7 @@ Match `RedirectURL` and `PostLogoutRedirectURL` in `Cidaas.plist` to the portal.
 
 ### Device registration
 
-Requires iOS 14+, physical device and `NSFaceIDUsageDescription`. See [Device Registration](#module-api-guide-v3). Simulator usually can't complete App Attest.
+Requires iOS 14+, physical device and `NSFaceIDUsageDescription`. See [Device Registration](#device-registration). Simulator usually can't complete App Attest.
 
 ### TLS pinning
 
@@ -1123,9 +1095,7 @@ Requires iOS 14+, physical device and `NSFaceIDUsageDescription`. See [Device Re
 
 ---
 
-<a id="troubleshooting"></a>
-
-## Troubleshooting
+<h2 id="troubleshooting">Troubleshooting</h2>
 
 <details>
 <summary><strong>Common mistakes</strong></summary>
@@ -1168,9 +1138,7 @@ Requires iOS 14+, physical device and `NSFaceIDUsageDescription`. See [Device Re
 
 ---
 
-<a id="migrating-to-cidaas-v3"></a>
-
-## Migrating to Cidaas V3
+<h2 id="migrating-to-cidaas-v3">Migrating to Cidaas V3</h2>
 
 <details>
 <summary><strong>Migration checklist</strong></summary>
@@ -1190,9 +1158,7 @@ Requires iOS 14+, physical device and `NSFaceIDUsageDescription`. See [Device Re
 
 ---
 
-<a id="getting-client-id-and-urls"></a>
-
-## Getting Client Id and URLs
+<h2 id="getting-client-id-and-urls">Getting Client Id and URLs</h2>
 
 Create an **App / Client** in the Cidaas portal and configure:
 
@@ -1205,9 +1171,7 @@ Copy the **Client ID** and **Domain URL** into `Cidaas.plist`.
 
 ---
 
-<a id="api-choice-guide"></a>
-
-## API Choice Guide
+<h2 id="api-choice-guide">API Choice Guide</h2>
 
 | Use case | API |
 |----------|-----|
