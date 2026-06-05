@@ -141,7 +141,7 @@ The SDK ships as one **`Cidaas`** Swift Package with three layers. Use **v3** fo
 
 | Layer | Path | Entry point | Use when |
 |-------|------|-------------|----------|
-| **v3** | `Classes/v3/` | `Cidaas.shared.webAuth`, `.users()`, `.mfa()`, `.device()` | **Default** — browser auth, MFA, password reset, user info, device registration |
+| **v3** | `Classes/v3/` | `Cidaas.shared.webAuth`, `.users()`, `.mfa()`, `.device()` | **Default** — browser auth, MFA, password reset, account verification, user info, device registration |
 | **Core** | `Classes/Core/` | `Cidaas.shared`, `CidaasView` | Config, token refresh, WebView login, pinning |
 | **Native (V2)** | `Classes/V2/Native/` | `CidaasNative.shared` | Native login UI, registration fields, link/unlink, deduplication |
 | **Consent (V2)** | `Classes/V2/Consent/` | `CidaasConsent.shared` | OAuth consent screens (no v3 wrapper) |
@@ -152,7 +152,7 @@ The SDK ships as one **`Cidaas`** Swift Package with three layers. Use **v3** fo
 |-------------|---------|---------|
 | `Cidaas.shared.webAuth(delegate:)` | `CidaasWebAuthBuilder` | Browser login, registration, social login and logout |
 | `Cidaas.WebAuth` | Static helpers | Custom browser integrations |
-| `Cidaas.users()` | `CidaasUsersBuilder` | User info and password reset |
+| `Cidaas.users()` | `CidaasUsersBuilder` | User info, password reset and account verification |
 | `Cidaas.mfa(_:)` | `CidaasMFABuilder` | MFA enrollment and authentication |
 | `Cidaas.device()` | `CidaasDevice` | Device registration with attestation proofs |
 
@@ -215,6 +215,7 @@ MFA builders cache `sub`, exchange ids and push selection between steps — see 
 ```
 Cidaas.users()
     → passwordReset(.initiate | .validate | .accept)
+    → accountVerification(.initiate | .validate)
     → fetchUserInfo(sub:) | fetchUserInfo(accessToken:)
 ```
 
@@ -399,7 +400,7 @@ try await Cidaas.shared
 
 ### Purpose
 
-Password reset and OpenID Connect userinfo.
+Password reset, account verification (email or mobile) and OpenID Connect userinfo.
 
 ### Entry point
 
@@ -414,6 +415,7 @@ Requires OAuth properties from `readPropertyFile()` or `setURL(...)`.
 | Method | Required | Async (iOS 13+) | Returns |
 |--------|----------|-----------------|---------|
 | `passwordReset(_:completion:)` | `CidaasPasswordResetAction` | `passwordReset(_:)` | `CidaasPasswordResetOutcome` |
+| `accountVerification(_:completion:)` | `CidaasAccountVerificationAction` | `accountVerification(_:)` | `CidaasAccountVerificationOutcome` |
 | `fetchUserInfo(sub:completion:)` | non-empty `sub` | `fetchUserInfo(sub:)` | `UserInfoEntity` |
 | `fetchUserInfo(accessToken:completion:)` | non-empty token | `fetchUserInfo(accessToken:)` | `UserInfoEntity` |
 
@@ -451,6 +453,49 @@ Cidaas.users().passwordReset(.initiate(initiate)) { result in
         Cidaas.users().passwordReset(.accept(accept)) { _ in }
     }
 }
+```
+
+### Account verification flow
+
+Two-step flow to verify an email or mobile number on the user profile. Obtain an OAuth `requestId` (same as password reset) before initiating.
+
+**Initiate** requires `requestId`, `verificationMedium`, `processingType` and at least one of `email` or `mobile`. **Validate** requires `accvid` from the initiate response and the code delivered to the user.
+
+```swift
+// 1. Initiate — send verification code
+var initiate = InitiateAccountVerificationEntity()
+initiate.requestId = "your-request-id"
+initiate.verificationMedium = "email"   // or "mobile"
+initiate.processingType = "code"
+initiate.email = "user@example.com"
+initiate.mobile = "+92928893" // in case of `verificationMedium` is passed as "mobile"
+
+Cidaas.users().accountVerification(.initiate(initiate)) { result in
+    guard case .success(result: .initiate(let response)) = result else { return }
+    let accvid = response.data.accvid
+
+    // 2. Validate with code from email/SMS
+    var verify = VerifyAccountEntity()
+    verify.accvid = accvid
+    verify.code = "123456"
+
+    Cidaas.users().accountVerification(.validate(verify)) { validateResult in
+        guard case .success(result: .validate(let vResponse)) = validateResult else { return }
+        print(vResponse.success)
+    }
+}
+```
+
+Async variants are available on iOS 13+:
+
+```swift
+let outcome = try await Cidaas.users().accountVerification(.initiate(initiate))
+guard case .initiate(let response) = outcome else { return }
+
+var verify = VerifyAccountEntity()
+verify.accvid = response.data.accvid
+verify.code = "123456"
+_ = try await Cidaas.users().accountVerification(.validate(verify))
 ```
 
 ### Fetch user info
@@ -669,7 +714,7 @@ let device = Cidaas.device()
 
 <h2 id="core-apis">Core APIs</h2>
 
-`Cidaas.shared` (`Core/Views/Cidaas.swift`) is the root singleton for configuration and token management. Browser auth, MFA, password reset and user info use v3 builders — see [Module API Guide v3](#module-api-guide-v3).
+`Cidaas.shared` (`Core/Views/Cidaas.swift`) is the root singleton for configuration and token management. Browser auth, MFA, password reset, account verification and user info use v3 builders — see [Module API Guide v3](#module-api-guide-v3).
 
 Configuration: see [SDK Configuration](#sdk-configuration).
 
@@ -784,7 +829,7 @@ When `enableNativeFacebook` or `enableNativeGoogle` is `true`:
 
 <h2 id="native-apis">Native APIs</h2>
 
-`CidaasNative.shared` (`V2/Native/Views/Native.swift`) exposes REST APIs for native UI where your app renders login and registration screens. Password reset and user info use v3 `Cidaas.users()`.
+`CidaasNative.shared` (`V2/Native/Views/Native.swift`) exposes REST APIs for native UI where your app renders login and registration screens. Password reset, account verification and user info use v3 `Cidaas.users()`.
 
 ### Authentication
 
@@ -891,7 +936,7 @@ Populate `ConsentDetailsRequestEntity`, `AcceptConsentEntity` and `ConsentContin
 
 <h2 id="asyncawait-helpers">Async/Await Helpers</h2>
 
-`Cidaas+AsyncAwait.swift` adds `@available(iOS 13.0, *)` async wrappers on `Cidaas.shared` for token refresh and native bootstrap helpers. Browser auth, user info and password reset use v3 builder async methods instead.
+`Cidaas+AsyncAwait.swift` adds `@available(iOS 13.0, *)` async wrappers on `Cidaas.shared` for token refresh and native bootstrap helpers. Browser auth, user info, password reset and account verification use v3 builder async methods instead.
 
 | Method | Returns | Wraps |
 |--------|---------|-------|
@@ -1182,6 +1227,7 @@ Copy the **Client ID** and **Domain URL** into `Cidaas.plist`.
 | Native username/password | `CidaasNative.shared.loginWithCredentials` |
 | MFA enrollment / authentication / configured list | `Cidaas.mfa(.totp).enrollment()…` / `.authentication()…` / `.configurations(sub:)` |
 | Password reset | `Cidaas.users().passwordReset(...)` |
+| Account verification | `Cidaas.users().accountVerification(.initiate \| .validate)` |
 | User info | `Cidaas.users().fetchUserInfo(...)` |
 | Device registration | `Cidaas.device().registerDevice(...)` |
 | OAuth consent | `CidaasConsent.shared` |
