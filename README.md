@@ -4,7 +4,7 @@ Integrate the Cidaas iOS SDK into your app. Use **v3 builders** in `Cidaas/Class
 
 [cidaas](https://www.cidaas.com) provides SSO (OAuth 2.0 / OpenID Connect), MFA, passwordless login, social login, native login, consent flows, user account management and device registration.
 
-**Start here:** [Quick Start](#quick-start) → [Module API Guide (v3)](#module-api-guide)
+**Start here:** [Quick Start](#quick-start) → [Module API Guide v3](#module-api-guide-v3)
 
 **Also covered:** token storage, async helpers, TLS pinning, DPoP and biometric proofs.
 
@@ -18,7 +18,7 @@ Integrate the Cidaas iOS SDK into your app. Use **v3 builders** in `Cidaas/Class
 - [Next Steps](#next-steps)
 - [Builder Pattern](#builder-pattern)
 - [SDK Configuration](#sdk-configuration)
-- [Module API Guide (v3)](#module-api-guide)
+- [Module API Guide v3](#module-api-guide-v3)
 - [Core APIs](#core-apis)
 - [Embedded WebView Login](#embedded-webview-login)
 - [Native APIs](#native-apis)
@@ -114,7 +114,7 @@ Cidaas.shared
     }
 ```
 
-Registration, social login and async `signIn()` — [Browser Authentication](#module-api-guide). Error handling — [Error Handling](#error-handling).
+Registration, social login and async `signIn()` — [Browser Authentication](#module-api-guide-v3). Error handling — [Error Handling](#error-handling).
 
 ### Step 7 — Run your app
 
@@ -189,7 +189,7 @@ Select the **`Cidaas`** library product when adding the package.
 
 ## Next Steps
 
-After browser login works, open the [Module API Guide (v3)](#module-api-guide) for MFA, user accounts and device registration.
+After browser login works, open the [Module API Guide v3](#module-api-guide-v3) for MFA, user accounts and device registration.
 
 ---
 
@@ -218,7 +218,7 @@ Cidaas.mfa(.totp)
     → configurations(sub:) on the root builder
 ```
 
-MFA builders cache `sub`, exchange ids and push selection between steps — see [MFA](#module-api-guide).
+MFA builders cache `sub`, exchange ids and push selection between steps — see [MFA](#module-api-guide-v3).
 
 ### User accounts
 
@@ -337,9 +337,9 @@ Cidaas.shared.biometricProofLocalizedReason = "Verify your identity to continue"
 
 ---
 
-<a id="module-api-guide"></a>
+<a id="module-api-guide-v3"></a>
 
-## Module API Guide (v3)
+## Module API Guide v3
 
 <details>
 <summary><strong>Browser Authentication — <code>CidaasWebAuthBuilder</code></strong></summary>
@@ -681,7 +681,7 @@ let device = Cidaas.device()
 
 ## Core APIs
 
-`Cidaas.shared` (`Core/Views/Cidaas.swift`) is the root singleton for configuration and token management. Browser auth, MFA, password reset and user info use v3 builders — see [Module API Guide (v3)](#module-api-guide).
+`Cidaas.shared` (`Core/Views/Cidaas.swift`) is the root singleton for configuration and token management. Browser auth, MFA, password reset and user info use v3 builders — see [Module API Guide v3](#module-api-guide-v3).
 
 Configuration: see [SDK Configuration](#sdk-configuration).
 
@@ -1033,7 +1033,7 @@ Turn flags off when later calls should not prompt for biometrics.
 
 ### Custom authorization URL
 
-Build or handle authorization URLs with `Cidaas.WebAuth.authorizationURL(for:extraParameters:)` and `Cidaas.WebAuth.handleRedirect(_:)` — see [Browser Authentication](#module-api-guide).
+Build or handle authorization URLs with `Cidaas.WebAuth.authorizationURL(for:extraParameters:)` and `Cidaas.WebAuth.handleRedirect(_:)` — see [Browser Authentication](#module-api-guide-v3).
 
 ### Debug logging
 
@@ -1114,7 +1114,7 @@ Match `RedirectURL` and `PostLogoutRedirectURL` in `Cidaas.plist` to the portal.
 
 ### Device registration
 
-Requires iOS 14+, physical device and `NSFaceIDUsageDescription`. See [Device Registration](#module-api-guide). Simulator usually can't complete App Attest.
+Requires iOS 14+, physical device and `NSFaceIDUsageDescription`. See [Device Registration](#module-api-guide-v3). Simulator usually can't complete App Attest.
 
 ### TLS pinning
 
