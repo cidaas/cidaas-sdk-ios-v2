@@ -22,9 +22,9 @@ public class ChangePasswordInteractor {
     public func changePassword(access_token: String, incomingData : ChangePasswordEntity, callback: @escaping(Result<ChangePasswordResponseEntity>) -> Void) {
         
         // validation
-        if (incomingData.new_password == "" || incomingData.confirm_password == "" || incomingData.old_password == "" || incomingData.identityId == "") {
+        if (incomingData.new_password == "" || incomingData.confirm_password == "" || incomingData.old_password == "" || (incomingData.identityId == "" && incomingData.sub == "")) {
             // send response to presenter
-            let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "new_password or confirm_password or old_password or identityId cannot be empty", statusCode: 417)
+            let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "sub or identityId, old_password, new_password and confirm_password are required", statusCode: 417)
             sharedPresenter.changePassword(response: nil, errorResponse: error, callback: callback)
             return
         }

@@ -23,6 +23,11 @@ extension Cidaas {
     ) {
         mfa(type).enrollment().enrollmentSetup(accessToken: accessToken, sub: sub, completion: completion)
     }
+
+    /// Device MFA management APIs (history, pending push, FCM, unlink, etc.) — not tied to a verification type.
+    public static func mfaSupport() -> CidaasMFASupportBuilder {
+        CidaasMFASupportBuilder(verificationType: "")
+    }
 }
 
 // MARK: - Public types
@@ -81,32 +86,22 @@ public struct CidaasMFAAuthenticationInitiationResult {
     public let pushSelectedNumber: String?
 }
 
-// MARK: - Session state
-
-fileprivate final class CidaasMFAEnrollmentSession {
-    var cachedSub: String?
-    var cachedSetupExchangeId: String?
-    var cachedExchangeIdAfterScanned: String?
-    var cachedPushSelectedNumber: String?
-}
+// MARK: - Session state (authentication only)
 
 fileprivate final class CidaasMFAAuthenticationSession {
     var cachedSub: String?
     var cachedExchangeId: String?
-    var cachedPushSelected: String?
     var cachedRequestId: String?
     var cachedUsageType: String?
 
     func storeInitiation(
         sub: String,
         exchangeId: String,
-        pushSelected: String?,
         requestId: String,
         usageType: String
     ) {
         cachedSub = sub
         cachedExchangeId = exchangeId
-        cachedPushSelected = pushSelected
         cachedRequestId = requestId
         cachedUsageType = usageType
     }
@@ -121,7 +116,6 @@ fileprivate final class CidaasMFAAuthenticationSession {
 public final class CidaasMFABuilder {
 
     private let verificationType: String
-    fileprivate let enrollmentSession = CidaasMFAEnrollmentSession()
     fileprivate let authenticationSession = CidaasMFAAuthenticationSession()
 
     fileprivate init(verificationType: String) {
@@ -129,16 +123,21 @@ public final class CidaasMFABuilder {
     }
 
     public func enrollment() -> CidaasMFAEnrollmentBuilder {
-        CidaasMFAEnrollmentBuilder(verificationType: verificationType, session: enrollmentSession)
+        CidaasMFAEnrollmentBuilder(verificationType: verificationType)
     }
 
     public func authentication() -> CidaasMFAAuthenticationBuilder {
         CidaasMFAAuthenticationBuilder(verificationType: verificationType, session: authenticationSession)
     }
 
+    /// Device management, pending push auth, history, FCM update, and related support APIs.
+    public func support() -> CidaasMFASupportBuilder {
+        CidaasMFASupportBuilder(verificationType: verificationType)
+    }
+
     /// Configured MFA methods for the user on this device.
-    public func configurations(sub: String? = nil, completion: @escaping (Result<MFAListResponse>) -> Void) {
-        let resolvedSub = sub ?? enrollmentSession.cachedSub ?? authenticationSession.cachedSub ?? ""
+    public func configurations(sub: String, completion: @escaping (Result<MFAListResponse>) -> Void) {
+        let resolvedSub = sub.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolvedSub.isEmpty else {
             MFA.fail("sub is required", completion: completion)
             return
@@ -158,11 +157,9 @@ public final class CidaasMFABuilder {
 public final class CidaasMFAEnrollmentBuilder {
 
     private let verificationType: String
-    private let session: CidaasMFAEnrollmentSession
 
-    fileprivate init(verificationType: String, session: CidaasMFAEnrollmentSession) {
+    fileprivate init(verificationType: String) {
         self.verificationType = verificationType
-        self.session = session
     }
 
     public func initiation(
@@ -180,7 +177,7 @@ public final class CidaasMFAEnrollmentBuilder {
         req.device_id = MFA.deviceId()
         req.push_id = MFA.pushId()
 
-        VerificationViewController.shared.setup(verificationType: verificationType, incomingData: req) { [self] result in
+        VerificationViewController.shared.setup(verificationType: verificationType, incomingData: req) { result in
             switch result {
             case .failure(let error):
                 MFA.onMain { completion(.failure(error: error)) }
@@ -188,10 +185,6 @@ public final class CidaasMFAEnrollmentBuilder {
                 let setupExchangeId = resp.data.exchange_id.exchange_id
                 let pushSelected = resp.data.push_selected_number
                 let totpSecret = resp.data.totp_secret.isEmpty ? nil : resp.data.totp_secret
-                session.cachedSub = resp.data.sub
-                session.cachedSetupExchangeId = setupExchangeId
-                session.cachedPushSelectedNumber = pushSelected.isEmpty ? nil : pushSelected
-                session.cachedExchangeIdAfterScanned = nil
                 let value = CidaasMFAEnrollmentInitiationResult(
                     sub: resp.data.sub,
                     setupExchangeId: setupExchangeId,
@@ -205,15 +198,15 @@ public final class CidaasMFAEnrollmentBuilder {
     }
 
     public func scanned(
-        sub: String? = nil,
-        exchangeId: String? = nil,
+        sub: String,
+        exchangeId: String,
         completion: @escaping (Result<CidaasMFAEnrollmentScannedResult>) -> Void
     ) {
-        let resolvedSub = sub ?? session.cachedSub ?? ""
-        let resolvedExchange = exchangeId ?? session.cachedSetupExchangeId ?? ""
+        let resolvedSub = sub.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedExchange = exchangeId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolvedSub.isEmpty, !resolvedExchange.isEmpty else {
             MFA.fail(
-                "sub and exchangeId are required (call initiation first or pass explicitly)",
+                "sub and exchangeId are required (pass values from initiation result)",
                 completion: completion
             )
             return
@@ -224,13 +217,12 @@ public final class CidaasMFAEnrollmentBuilder {
         req.device_id = MFA.deviceId()
         req.push_id = MFA.pushId()
 
-        VerificationViewController.shared.scanned(verificationType: verificationType, incomingData: req) { [self] result in
+        VerificationViewController.shared.scanned(verificationType: verificationType, incomingData: req) { result in
             switch result {
             case .failure(let error):
                 MFA.onMain { completion(.failure(error: error)) }
             case .success(result: let resp):
                 let scannedExchangeId = resp.data.exchange_id.exchange_id
-                session.cachedExchangeIdAfterScanned = scannedExchangeId
                 let value = CidaasMFAEnrollmentScannedResult(
                     sub: resp.data.sub,
                     exchangeId: scannedExchangeId,
@@ -242,7 +234,7 @@ public final class CidaasMFAEnrollmentBuilder {
         }
     }
 
-    /// Initiation, then scan when required. Session is cached for `verification()`.
+    /// Initiation, then scan when required (pattern/push/touch/face).
     public func enrollmentSetup(
         accessToken: String = "",
         sub: String = "",
@@ -251,7 +243,7 @@ public final class CidaasMFAEnrollmentBuilder {
         initiation(accessToken: accessToken, sub: sub) { initResult in
             switch initResult {
             case .failure(let error):
-                completion(.failure(error: error))
+                MFA.onMain { completion(.failure(error: error)) }
             case .success(let initiation):
                 guard Self.requiresScan(verificationType: self.verificationType) else {
                     let value = CidaasMFAEnrollmentSetupResult(
@@ -265,7 +257,7 @@ public final class CidaasMFAEnrollmentBuilder {
                 self.scanned(sub: initiation.sub, exchangeId: initiation.setupExchangeId) { scanResult in
                     switch scanResult {
                     case .failure(let error):
-                        completion(.failure(error: error))
+                        MFA.onMain { completion(.failure(error: error)) }
                     case .success(let scanned):
                         let value = CidaasMFAEnrollmentSetupResult(
                             verificationType: self.verificationType,
@@ -280,7 +272,7 @@ public final class CidaasMFAEnrollmentBuilder {
     }
 
     public func verification(
-        exchangeId: String? = nil,
+        exchangeId: String,
         otp: String? = nil,
         pattern: String? = nil,
         pushNumber: String? = nil,
@@ -289,7 +281,7 @@ public final class CidaasMFAEnrollmentBuilder {
         localizedReason: String = "Authenticate",
         completion: @escaping (Result<EnrollResponse>) -> Void
     ) {
-        let resolvedExchange = resolvedEnrollmentExchangeId(explicit: exchangeId)
+        let resolvedExchange = exchangeId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolvedExchange.isEmpty else {
             MFA.fail("exchangeId is required", completion: completion)
             return
@@ -298,8 +290,7 @@ public final class CidaasMFAEnrollmentBuilder {
             verificationType: verificationType,
             otp: otp,
             pattern: pattern,
-            pushNumber: pushNumber,
-            cachedPushNumber: session.cachedPushSelectedNumber
+            pushNumber: pushNumber
         ) else {
             MFA.fail(MFAPassCode.validationMessage(for: verificationType), completion: completion)
             return
@@ -323,6 +314,33 @@ public final class CidaasMFAEnrollmentBuilder {
         }
     }
 
+    /// Cancels an in-flight enrollment setup.
+    public func cancelSetup(
+        exchangeId: String,
+        reason: String,
+        completion: @escaping (Result<EnrollResponse>) -> Void
+    ) {
+        let resolvedExchange = exchangeId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !resolvedExchange.isEmpty else {
+            MFA.fail("exchangeId is required", completion: completion)
+            return
+        }
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReason.isEmpty else {
+            MFA.fail("reason is required for cancelSetup", completion: completion)
+            return
+        }
+        let req = CancelExchangeRequest()
+        req.exchange_id = resolvedExchange
+        req.reason = trimmedReason
+        VerificationViewController.shared.cancelEnrollmentSetup(
+            verificationType: verificationType,
+            cancelSetupRequest: req
+        ) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
     fileprivate static func requiresScan(verificationType: String) -> Bool {
         switch verificationType {
         case VerificationTypes.PATTERN.rawValue,
@@ -341,15 +359,6 @@ public final class CidaasMFAEnrollmentBuilder {
         scannedExchangeId: String
     ) -> String {
         requiresScan(verificationType: verificationType) ? scannedExchangeId : setupExchangeId
-    }
-
-    private func resolvedEnrollmentExchangeId(explicit: String?) -> String {
-        if let explicit, !explicit.isEmpty { return explicit }
-        return Self.enrollmentVerificationExchangeId(
-            verificationType: verificationType,
-            setupExchangeId: session.cachedSetupExchangeId ?? "",
-            scannedExchangeId: session.cachedExchangeIdAfterScanned ?? ""
-        )
     }
 }
 
@@ -411,13 +420,13 @@ public final class CidaasMFAAuthenticationBuilder {
                 session.storeInitiation(
                     sub: cachedSub,
                     exchangeId: exchangeId,
-                    pushSelected: pushSelected.isEmpty ? nil : pushSelected,
                     requestId: requestId,
                     usageType: usageType
                 )
+                let masked = resp.data.maskedSub.isEmpty ? nil : resp.data.maskedSub
                 let value = CidaasMFAAuthenticationInitiationResult(
                     sub: usageType == UsageTypes.MFA.rawValue ? sub : cachedSub,
-                    maskedSub: nil,
+                    maskedSub: masked,
                     exchangeId: exchangeId,
                     statusId: resp.data.status_id,
                     pushSelectedNumber: pushSelected.isEmpty ? nil : pushSelected
@@ -454,8 +463,7 @@ public final class CidaasMFAAuthenticationBuilder {
             verificationType: verificationType,
             otp: otp,
             pattern: pattern,
-            pushNumber: pushNumber,
-            cachedPushNumber: session.cachedPushSelected
+            pushNumber: pushNumber
         ) else {
             MFA.fail(MFAPassCode.validationMessage(for: verificationType), completion: completion)
             return
@@ -523,9 +531,6 @@ public final class CidaasMFAAuthenticationBuilder {
                 MFA.onMain { completion(result) }
             case .success(let response):
                 session.updateExchangeId(response.data.exchange_id.exchange_id)
-                if let number = response.data.push_random_numbers.first, !number.isEmpty {
-                    session.cachedPushSelected = number
-                }
                 MFA.onMain { completion(.success(result: response)) }
             }
         }
@@ -546,6 +551,32 @@ public final class CidaasMFAAuthenticationBuilder {
         req.device_id = MFA.deviceId()
         req.push_id = MFA.pushId()
         VerificationViewController.shared.pushReject(verificationType: verificationType, incomingData: req) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
+    /// Cancels an in-flight authentication.
+    public func cancelAuthentication(
+        exchangeId: String? = nil,
+        reason: String,
+        completion: @escaping (Result<CancelAuthenticationResponse>) -> Void
+    ) {
+        guard let resolved = resolvedPushExchangeId(exchangeId) else {
+            MFA.fail("exchangeId is required", completion: completion)
+            return
+        }
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReason.isEmpty else {
+            MFA.fail("reason is required for cancelAuthentication", completion: completion)
+            return
+        }
+        let req = CancelExchangeRequest()
+        req.exchange_id = resolved
+        req.reason = trimmedReason
+        VerificationViewController.shared.cancelAuthentication(
+            verificationType: verificationType,
+            cancelAuthenticationRequest: req
+        ) { result in
             MFA.onMain { completion(result) }
         }
     }
@@ -593,6 +624,110 @@ public final class CidaasMFAAuthenticationBuilder {
     }
 }
 
+// MARK: - Support (device MFA management, history, pending push)
+
+public final class CidaasMFASupportBuilder {
+
+    private let verificationType: String
+
+    fileprivate init(verificationType: String) {
+        self.verificationType = verificationType
+    }
+
+    public func deleteAll(
+        incomingData: DeleteRequest,
+        completion: @escaping (Result<DeleteResponse>) -> Void
+    ) {
+        VerificationViewController.shared.deleteAll(incomingData: incomingData) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
+    public func delete(
+        incomingData: DeleteRequest,
+        completion: @escaping (Result<DeleteResponse>) -> Void
+    ) {
+        VerificationViewController.shared.delete(incomingData: incomingData) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
+    public func pendingNotifications(
+        incomingData: PendingNotificationRequest,
+        completion: @escaping (Result<PendingNotificationResponse>) -> Void
+    ) {
+        VerificationViewController.shared.getPendingNotificationList(incomingData: incomingData) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
+    public func history(
+        incomingData: MFAHistoryRequest,
+        completion: @escaping (Result<MFAHistoryResponse>) -> Void
+    ) {
+        VerificationViewController.shared.getMFAHistoryList(incomingData: incomingData) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
+    /// Updates the device push token on the verification backend. 
+    public func updateFCMToken(
+        incomingData: UpdateFCMRequest,
+        completion: @escaping (Result<UpdateFCMResponse>) -> Void
+    ) {
+        VerificationViewController.shared.updateFCMToken(updateFCMRequest: incomingData) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
+    public func passwordlessContinue(
+        incomingData: PasswordlessRequest,
+        completion: @escaping (Result<AuthzCodeResponse>) -> Void
+    ) {
+        VerificationInteractor.shared.passwordlessContinue(incomingData: incomingData) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
+    public func timeline(
+        incomingData: TimeLineRequest,
+        completion: @escaping (Result<TimeLineDetailsResponse>) -> Void
+    ) {
+        VerificationViewController.shared.getTimeLineDetails(timeLineRequest: incomingData) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
+    public func configuredDeviceList(
+        incomingData: MFAConfiguredDeviceListRequest,
+        completion: @escaping (Result<MFAConfiguredDeviceListResponse>) -> Void
+    ) {
+        VerificationViewController.shared.getMFAConfiguredDeviceList(
+            mfaConfiguredDeviceListRequest: incomingData
+        ) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
+    public func deleteDevice(
+        incomingData: DeleteDeviceRequest,
+        completion: @escaping (Result<DeleteResponse>) -> Void
+    ) {
+        VerificationViewController.shared.deleteDevice(deleteRequest: incomingData) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
+    public func deviceConfiguredList(
+        incomingData: MFAListRequest,
+        completion: @escaping (Result<MFAListResponse>) -> Void
+    ) {
+        VerificationViewController.shared.getDeviceConfiguredList(mfaListRequest: incomingData) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+}
+
 // MARK: - Private helpers
 
 private enum MFA {
@@ -628,12 +763,11 @@ private enum MFAPassCode {
         verificationType: String,
         otp: String?,
         pattern: String?,
-        pushNumber: String?,
-        cachedPushNumber: String?
+        pushNumber: String?
     ) -> String? {
         switch verificationType {
         case VerificationTypes.PUSH.rawValue:
-            let code = pushNumber ?? cachedPushNumber ?? ""
+            let code = pushNumber ?? ""
             return code.isEmpty ? nil : code
         case VerificationTypes.PATTERN.rawValue:
             let code = pattern ?? otp ?? ""

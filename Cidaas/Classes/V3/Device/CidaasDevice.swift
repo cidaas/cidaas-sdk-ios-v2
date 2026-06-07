@@ -321,6 +321,9 @@ public final class CidaasDevice {
                             return
                         }
                         let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                        var info = DBHelper.shared.getDeviceInfo()
+                        info.deviceId = deviceId
+                        DBHelper.shared.setDeviceInfo(deviceInfo: info)
                         self.logDeviceRegistration("verify", response: responseString)
                         DispatchQueue.main.async {
                             completion(.success(result: DeviceRegistrationVerifyResult(deviceId: deviceId)))

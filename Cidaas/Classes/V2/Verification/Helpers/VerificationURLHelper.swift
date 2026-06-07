@@ -11,30 +11,37 @@ public class VerificationURLHelper {
     
     public static var shared : VerificationURLHelper = VerificationURLHelper()
     
+    
     public var setupURL: String = "/verification-actions-srv/setup/"
     public var scannedURL: String = "/verification-actions-srv/setup/"
     public var enrolledURL: String = "/verification-actions-srv/setup/"
+
     public var initiateURL: String = "/verification-srv/authentication/"
     public var cancelURL: String = "/verification-srv/authentication/"
     public var pushAckURL: String = "/verification-srv/authentication/"
     public var pushAllowURL: String = "/verification-srv/authentication/"
     public var pushRejectURL: String = "/verification-srv/authentication/"
     public var authenticateURL: String = "/verification-srv/authentication/"
-    public var deleteAllURL: String = "/verification-actions-srv/setup/device/"
-    public var deleteURL: String = "/verification-actions-srv/setup/device/"
-    public var configuredListURL: String = "/verification-actions-srv/setup/devices"
-    public var pendingNotificationListURL: String = "/verification-actions-srv/setup/device/notification/list"
+
+    public var deleteAllURL: String = "/verification-actions-srv/setup/devices/"
+    public var deleteURL: String = "/verification-actions-srv/setup/devices/"
+    public var configuredListURL: String = "/verification-actions-srv/setup/devices/"
+    public var pendingNotificationListURL: String = "/verification-actions-srv/setup/devices/notifications"
+    public var fcmURL: String = "/verification-actions-srv/setup/devices/"
+
     public var mfaHistoryURL: String = "/verification-actions-srv/mfa/history"
-    public var fcmURL: String = "/verification-actions-srv/setup/device/pushid"
-    public var passwordlessContinueURL: String = "/login-srv/verification/sdk/login"
-    public var unlinkURL: String = "/verification-actions-srv/device/unlink"
     public var timeLineURL: String = "/verification-actions-srv/mfa/timeline"
-    public var listURL: String = "/verification-actions-srv/device/list"
+
+    public var passwordlessContinueURL: String = "/login-srv/verification/sdk/login"
+
+    public var unlinkURL: String = "/verification-actions-srv/devices/"
+    public var listURL: String = "/verification-actions-srv/devices/"
+
     public var deviceRegistrationInitiationURL: String = "/verification-actions-srv/devices/registration/initiation"
     public var deviceRegistrationVerificationURL: String = "/verification-actions-srv/devices/registration/verification"
     
     public func getSetupURL(verificationType: String) -> String {
-        return setupURL + verificationType + "/initiate"
+        return setupURL + verificationType + "/initiation"
     }
     
     public func getScannedURL(verificationType: String) -> String {
@@ -52,6 +59,10 @@ public class VerificationURLHelper {
     public func getCancelURL(verificationType: String) -> String {
         return cancelURL + verificationType + "/cancel"
     }
+
+    public func getCancelSetupURL(verificationType: String) -> String {
+        return setupURL + verificationType + "/cancellation"
+    }
     
     public func getPushAcknowledgeURL(verificationType: String) -> String {
         return pushAckURL + verificationType + "/push/acknowledge"
@@ -62,7 +73,7 @@ public class VerificationURLHelper {
     }
     
     public func getPushRejectURL(verificationType: String) -> String {
-        return pushRejectURL + verificationType + "/reject"
+        return pushRejectURL + verificationType + "/deny"
     }
     
     public func getAuthenticateURL(verificationType: String) -> String {
@@ -117,4 +128,3 @@ public class VerificationURLHelper {
         return deviceRegistrationVerificationURL
     }
 }
-

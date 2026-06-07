@@ -43,6 +43,66 @@ public final class CidaasUsersBuilder {
         }
     }
 
+    public func changePassword(
+        accessToken: String,
+        _ action: CidaasChangePasswordAction,
+        completion: @escaping (Result<CidaasChangePasswordOutcome>) -> Void
+    ) {
+        switch action {
+        case .change(let incoming):
+            ChangePasswordInteractor.shared.changePassword(access_token: accessToken, incomingData: incoming) { res in
+                Self.lift(res, into: CidaasChangePasswordOutcome.change, completion: completion)
+            }
+        }
+    }
+
+    @available(iOS 13.0, *)
+    public func changePassword(
+        accessToken: String,
+        _ action: CidaasChangePasswordAction
+    ) async throws -> CidaasChangePasswordOutcome {
+        try await withCheckedThrowingContinuation { continuation in
+            changePassword(accessToken: accessToken, action) { result in
+                switch result {
+                case .success(result: let outcome):
+                    continuation.resume(returning: outcome)
+                case .failure(error: let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    public func setPassword(
+        accessToken: String,
+        _ action: CidaasSetPasswordAction,
+        completion: @escaping (Result<CidaasSetPasswordOutcome>) -> Void
+    ) {
+        switch action {
+        case .set(let incoming):
+            SetPasswordInteractor.shared.setPassword(access_token: accessToken, incomingData: incoming) { res in
+                Self.lift(res, into: CidaasSetPasswordOutcome.set, completion: completion)
+            }
+        }
+    }
+
+    @available(iOS 13.0, *)
+    public func setPassword(
+        accessToken: String,
+        _ action: CidaasSetPasswordAction
+    ) async throws -> CidaasSetPasswordOutcome {
+        try await withCheckedThrowingContinuation { continuation in
+            setPassword(accessToken: accessToken, action) { result in
+                switch result {
+                case .success(result: let outcome):
+                    continuation.resume(returning: outcome)
+                case .failure(error: let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     public func accountVerification(
         _ action: CidaasAccountVerificationAction,
         completion: @escaping (Result<CidaasAccountVerificationOutcome>) -> Void

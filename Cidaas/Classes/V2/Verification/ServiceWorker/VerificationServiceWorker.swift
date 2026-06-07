@@ -415,7 +415,7 @@ public class VerificationServiceWorker {
             return
         }
         
-        sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams, callback: callback)
+        sharedSession.startSession(url: urlString, method: .put, parameters: bodyParams, callback: callback)
     }
     
     public func passwordlessContinue(incomingData: PasswordlessRequest, properties: Dictionary<String, String>, callback: @escaping (String?, WebAuthError?) -> Void) {
@@ -463,7 +463,7 @@ public class VerificationServiceWorker {
             return
         }
         
-        sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams, callback: callback)
+        sharedSession.startSession(url: urlString, method: .put, parameters: bodyParams, callback: callback)
     }
     
     public func getTimeLineDetails(incomingData: TimeLineRequest, properties: Dictionary<String, String>, callback: @escaping (String?, WebAuthError?) -> Void) {
@@ -535,7 +535,7 @@ public class VerificationServiceWorker {
             return
         }
         
-        sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams, callback: callback)
+        sharedSession.startSession(url: urlString, method: .delete, parameters: bodyParams, callback: callback)
     }
     
     public func getDeviceConfiguredList(incomingData: MFAListRequest, properties: Dictionary<String, String>, callback: @escaping (String?, WebAuthError?) -> Void) {
@@ -562,7 +562,7 @@ public class VerificationServiceWorker {
         sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams, callback: callback)
     }
     
-    public func cancelQr(verificationType: String,incomingData: CancelQrRequest, properties: Dictionary<String, String>, callback: @escaping (String?, WebAuthError?) -> Void) {
+    public func cancelAuthentication(verificationType: String,incomingData: CancelExchangeRequest, properties: Dictionary<String, String>, callback: @escaping (String?, WebAuthError?) -> Void) {
         var urlString : String
         
         // assign base url
@@ -583,6 +583,28 @@ public class VerificationServiceWorker {
             return
         }
         
+        sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams, callback: callback)
+    }
+
+    public func cancelEnrollmentSetup(
+        verificationType: String,
+        incomingData: CancelExchangeRequest,
+        properties: Dictionary<String, String>,
+        callback: @escaping (String?, WebAuthError?) -> Void
+    ) {
+        let baseURL = (properties["DomainURL"])!
+        let urlString = baseURL + sharedURL.getCancelSetupURL(verificationType: verificationType)
+
+        var bodyParams = Dictionary<String, Any>()
+        do {
+            let encoder = JSONEncoder()
+            let data = try encoder.encode(incomingData)
+            bodyParams = try! JSONSerialization.jsonObject(with: data, options: []) as? Dictionary<String, Any> ?? Dictionary<String, Any>()
+        } catch (_) {
+            callback(nil, WebAuthError.shared.conversionException())
+            return
+        }
+
         sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams, callback: callback)
     }
 }
