@@ -8,8 +8,8 @@ import Alamofire
 
 extension Cidaas {
 
-    /// Device registration entry point (App Attest or Firebase App Check + DPoP + biometric proofs). iOS 14+.
-    public static func device() -> CidaasDevice {
+    /// Device registration entry point (App Attest or Firebase App Check + DPoP + biometric proofs). iOS 14+. Call on ``Cidaas/shared``, e.g. `Cidaas.shared.device()`.
+    public func device() -> CidaasDevice {
         CidaasDevice()
     }
 }

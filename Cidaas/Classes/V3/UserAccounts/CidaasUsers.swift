@@ -7,8 +7,8 @@ import Foundation
 
 extension Cidaas {
 
-    /// Entry point for ``CidaasUsersBuilder`` (userinfo, password reset, change/set password, account verification).
-    public static func users() -> CidaasUsersBuilder {
+    /// Entry point for ``CidaasUsersBuilder`` (userinfo, password reset, change/set password, account verification). Call on ``Cidaas/shared``, e.g. `Cidaas.shared.users()`.
+    public func users() -> CidaasUsersBuilder {
         CidaasUsersBuilder()
     }
 }

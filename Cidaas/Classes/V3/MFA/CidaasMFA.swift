@@ -10,12 +10,13 @@ import UIKit
 
 extension Cidaas {
 
-    public static func mfa(_ type: CidaasMFAVerificationType) -> CidaasMFABuilder {
+    /// MFA enrollment and authentication. Call on ``Cidaas/shared``, e.g. `Cidaas.shared.mfa(.totp)`.
+    public func mfa(_ type: CidaasMFAVerificationType) -> CidaasMFABuilder {
         CidaasMFABuilder(verificationType: type.rawValue)
     }
 
     /// Enrollment setup: initiation, then scan only when required (pattern/push/touch/face).
-    public static func mfaEnrollmentSetup(
+    public func mfaEnrollmentSetup(
         _ type: CidaasMFAVerificationType,
         accessToken: String = "",
         sub: String = "",
@@ -25,7 +26,7 @@ extension Cidaas {
     }
 
     /// Device MFA management APIs (history, pending push, FCM, unlink, etc.) — not tied to a verification type.
-    public static func mfaSupport() -> CidaasMFASupportBuilder {
+    public func mfaSupport() -> CidaasMFASupportBuilder {
         CidaasMFASupportBuilder(verificationType: "")
     }
 }
@@ -133,22 +134,6 @@ public final class CidaasMFABuilder {
     /// Device management, pending push auth, history, FCM update, and related support APIs.
     public func support() -> CidaasMFASupportBuilder {
         CidaasMFASupportBuilder(verificationType: verificationType)
-    }
-
-    /// Configured MFA methods for the user on this device.
-    public func configurations(sub: String, completion: @escaping (Result<MFAListResponse>) -> Void) {
-        let resolvedSub = sub.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !resolvedSub.isEmpty else {
-            MFA.fail("sub is required", completion: completion)
-            return
-        }
-        let req = MFAListRequest()
-        req.sub = resolvedSub
-        req.device_id = MFA.deviceId()
-        req.push_id = MFA.pushId()
-        VerificationViewController.shared.getConfiguredList(incomingData: req) { result in
-            MFA.onMain { completion(result) }
-        }
     }
 }
 
@@ -309,33 +294,6 @@ public final class CidaasMFAEnrollmentBuilder {
             photo: photo,
             voice: Data(),
             incomingData: enroll
-        ) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    /// Cancels an in-flight enrollment setup.
-    public func cancelSetup(
-        exchangeId: String,
-        reason: String,
-        completion: @escaping (Result<EnrollResponse>) -> Void
-    ) {
-        let resolvedExchange = exchangeId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !resolvedExchange.isEmpty else {
-            MFA.fail("exchangeId is required", completion: completion)
-            return
-        }
-        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedReason.isEmpty else {
-            MFA.fail("reason is required for cancelSetup", completion: completion)
-            return
-        }
-        let req = CancelExchangeRequest()
-        req.exchange_id = resolvedExchange
-        req.reason = trimmedReason
-        VerificationViewController.shared.cancelEnrollmentSetup(
-            verificationType: verificationType,
-            cancelSetupRequest: req
         ) { result in
             MFA.onMain { completion(result) }
         }
@@ -632,6 +590,22 @@ public final class CidaasMFASupportBuilder {
 
     fileprivate init(verificationType: String) {
         self.verificationType = verificationType
+    }
+
+    /// Configured MFA methods for the user on this device (`sub` + current `device_id` / `push_id`).
+    public func configurations(sub: String, completion: @escaping (Result<MFAListResponse>) -> Void) {
+        let resolvedSub = sub.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !resolvedSub.isEmpty else {
+            MFA.fail("sub is required", completion: completion)
+            return
+        }
+        let req = MFAListRequest()
+        req.sub = resolvedSub
+        req.device_id = MFA.deviceId()
+        req.push_id = MFA.pushId()
+        VerificationViewController.shared.getConfiguredList(incomingData: req) { result in
+            MFA.onMain { completion(result) }
+        }
     }
 
     public func deleteAll(
