@@ -95,10 +95,26 @@ public class VerificationInteractor {
     }
     
     public func initiate(verificationType: String, incomingData: InitiateRequest, callback: @escaping (Result<InitiateResponse>) -> Void) {
-        // validation
-        if (verificationType == "" || incomingData.sub == "" || incomingData.request_id == "" || incomingData.usage_type == "") {
-            // send response to presenter
-            let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "verificationType or sub or request_id or usage_type cannot be empty", statusCode: 417)
+        var validationMessage: String?
+        if verificationType.isEmpty || incomingData.request_id.isEmpty || incomingData.usage_type.isEmpty {
+            validationMessage = "verificationType, request_id, and usage_type cannot be empty"
+        } else if incomingData.usage_type == UsageTypes.INITIAL.rawValue {
+            if incomingData.identifier.isEmpty {
+                validationMessage = "identifier is required for INITIAL_AUTHENTICATION"
+            } else if !incomingData.sub.isEmpty {
+                validationMessage = "sub must not be sent for INITIAL_AUTHENTICATION; use identifier"
+            }
+        } else if incomingData.usage_type == UsageTypes.MFA.rawValue {
+            if !incomingData.identifier.isEmpty {
+                validationMessage = "identifier is only allowed for INITIAL_AUTHENTICATION"
+            } else if incomingData.sub.isEmpty {
+                validationMessage = "masked sub is required for MULTIFACTOR_AUTHENTICATION"
+            }
+        } else if incomingData.sub.isEmpty && incomingData.identifier.isEmpty {
+            validationMessage = "sub or identifier is required"
+        }
+        if let validationMessage {
+            let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: validationMessage, statusCode: 417)
             sharedPresenter.initiate(initiateResponse: nil, errorResponse: error, callback: callback)
             return
         }
@@ -799,10 +815,10 @@ public class VerificationInteractor {
     
     public func getDeviceConfiguredList(mfaListRequest: MFAListRequest, callback: @escaping(Result<MFAListResponse>) -> Void) {
         
-        // validation
-        if (mfaListRequest.client_id == "" || mfaListRequest.push_id == "" || mfaListRequest.sub == "" || mfaListRequest.linked_device_id == "") {
+        // validation — linked_device_id is optional (only when querying another device)
+        if (mfaListRequest.client_id == "" || mfaListRequest.push_id == "" || mfaListRequest.sub == "" || mfaListRequest.device_id == "") {
             // send response to presenter
-            let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "client_id or push_id or sub or linked_device_id cannot be empty", statusCode: 417)
+            let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "client_id or push_id or sub or device_id cannot be empty", statusCode: 417)
             
             sharedPresenter.getDeviceConfiguredList(deviceConfiguredListResponse: nil, errorResponse: error, callback: callback)
            return
@@ -824,14 +840,14 @@ public class VerificationInteractor {
         }
     }
     
-    public func cancelQr(verificationType: String, cancelQrRequest: CancelQrRequest,callback: @escaping(Result<CancelQrResponse>) -> Void) {
+    public func cancelAuthentication(verificationType: String, cancelAuthenticationRequest: CancelExchangeRequest,callback: @escaping(Result<CancelAuthenticationResponse>) -> Void) {
         
         // validation
-        if (cancelQrRequest.exchange_id == "" || cancelQrRequest.reason == "") {
+        if (cancelAuthenticationRequest.exchange_id == "" || cancelAuthenticationRequest.reason == "") {
             // send response to presenter
             let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "exchange_id or reason cannot be empty", statusCode: 417)
             
-            sharedPresenter.cancelQr(cancelQrResult: nil, errorResponse: error, callback: callback)
+            sharedPresenter.cancelAuthentication(cancelAuthenticationResult: nil, errorResponse: error, callback: callback)
            return
         }
         
@@ -840,15 +856,54 @@ public class VerificationInteractor {
         if (savedProp == nil) {
             // send response to presenter
             let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "properties cannot be empty", statusCode: 417)
-            sharedPresenter.cancelQr(cancelQrResult: nil, errorResponse: error, callback: callback)
+            sharedPresenter.cancelAuthentication(cancelAuthenticationResult: nil, errorResponse: error, callback: callback)
             return
         }
         
         // call worker
-        sharedService.cancelQr(verificationType: verificationType, incomingData: cancelQrRequest, properties: savedProp!) {
+        sharedService.cancelAuthentication(verificationType: verificationType, incomingData: cancelAuthenticationRequest, properties: savedProp!) {
             response, error in
-            self.sharedPresenter.cancelQr(cancelQrResult: response, errorResponse: error, callback: callback)
+            self.sharedPresenter.cancelAuthentication(cancelAuthenticationResult: response, errorResponse: error, callback: callback)
         }
     }
-        
+
+    public func cancelEnrollmentSetup(
+        verificationType: String,
+        cancelSetupRequest: CancelExchangeRequest,
+        callback: @escaping (Result<EnrollResponse>) -> Void
+    ) {
+        if cancelSetupRequest.exchange_id == "" || cancelSetupRequest.reason == "" {
+            let error = WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: "exchange_id or reason cannot be empty",
+                statusCode: 417
+            )
+            sharedPresenter.cancelEnrollmentSetup(cancelSetupResult: nil, errorResponse: error, callback: callback)
+            return
+        }
+
+        let savedProp = getProperties()
+        if savedProp == nil {
+            let error = WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: "properties cannot be empty",
+                statusCode: 417
+            )
+            sharedPresenter.cancelEnrollmentSetup(cancelSetupResult: nil, errorResponse: error, callback: callback)
+            return
+        }
+
+        sharedService.cancelEnrollmentSetup(
+            verificationType: verificationType,
+            incomingData: cancelSetupRequest,
+            properties: savedProp!
+        ) { response, error in
+            self.sharedPresenter.cancelEnrollmentSetup(
+                cancelSetupResult: response,
+                errorResponse: error,
+                callback: callback
+            )
+        }
+    }
+
 }

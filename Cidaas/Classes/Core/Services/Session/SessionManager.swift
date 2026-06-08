@@ -16,33 +16,49 @@ public class SessionManager {
     public var session: Session
     var deviceInfo: DeviceInfoModel
     var push_id: String
+
+    private var publicKeyPinningOptions: CidaasPublicKeyPinningOptions?
+    private let sessionLock = NSLock()
     
     public init() {
-        
-        // get device information
-        let deviceInfoEntity = DBHelper.shared.getDeviceInfo()
-        
-        // custom headers
+        deviceInfo = DBHelper.shared.getDeviceInfo()
+        push_id = DBHelper.shared.getFCM()
+        headers = Self.makeDefaultHeaders(deviceInfo: deviceInfo)
+        session = Self.makeSession(headers: headers, pinningOptions: nil)
+    }
+
+    /// Rebuilds the Alamofire ``Session`` with optional public-key hash pinning (call from ``Cidaas/setPublicKeyPinning``).
+    func setPublicKeyPinning(_ options: CidaasPublicKeyPinningOptions?) {
+        sessionLock.lock()
+        publicKeyPinningOptions = options
+        session = Self.makeSession(headers: headers, pinningOptions: options)
+        sessionLock.unlock()
+    }
+
+    private static func makeDefaultHeaders(deviceInfo: DeviceInfoModel) -> HTTPHeaders {
         let location = DBHelper.shared.getLocation()
-        headers = AF.session.configuration.headers
+        var headers = AF.session.configuration.headers
         headers["User-Agent"] = CidaasUserAgentBuilder.shared.UAString()
         headers["lat"] = location.0
         headers["lon"] = location.1
-        headers["deviceId"] = deviceInfoEntity.deviceId
-        headers["deviceMake"] = deviceInfoEntity.deviceMake
-        headers["deviceModel"] = deviceInfoEntity.deviceModel
-        headers["deviceVersion"] = deviceInfoEntity.deviceVersion
-        
-        // configuration
+        headers["deviceId"] = deviceInfo.deviceId
+        headers["deviceMake"] = deviceInfo.deviceMake
+        headers["deviceModel"] = deviceInfo.deviceModel
+        headers["deviceVersion"] = deviceInfo.deviceVersion
+        return headers
+    }
+
+    private static func makeSession(
+        headers: HTTPHeaders,
+        pinningOptions: CidaasPublicKeyPinningOptions?
+    ) -> Session {
         let configuration = URLSessionConfiguration.af.default
         configuration.headers = headers
-        
-        // session manager
-        session = Session(configuration: configuration)
-        
-        // construct device details
-        deviceInfo = DBHelper.shared.getDeviceInfo()
-        push_id = DBHelper.shared.getFCM()
+        let serverTrustManager = pinningOptions.flatMap { CidaasCertificatePinning.makeServerTrustManager(options: $0) }
+        if let serverTrustManager {
+            return Session(configuration: configuration, serverTrustManager: serverTrustManager)
+        }
+        return Session(configuration: configuration)
     }
     
     func startSession(url: String, method: HTTPMethod, parameters: [String: Any]?, extraheaders: [String: String] = [String: String](), callback: @escaping (String?, WebAuthError?) -> Void) {
@@ -59,7 +75,38 @@ public class SessionManager {
             bodyParams!["push_id"] = DBHelper.shared.getFCM()
         }
         
-        for(key, value) in extraheaders {
+        var mergedExtraHeaders = extraheaders
+        if #available(iOS 14.0, *) {
+            let cidaas = Cidaas.shared
+            if cidaas.useDpop {
+                if let dpopHeaders = try? CidaasHTTPProof.proofHeaders(
+                    urlString: url,
+                    httpMethod: method.rawValue,
+                    useDpop: true,
+                    useBiometric: false,
+                    biometricLocalizedReason: cidaas.biometricProofLocalizedReason
+                ) {
+                    for (key, value) in dpopHeaders where mergedExtraHeaders[key] == nil {
+                        mergedExtraHeaders[key] = value
+                    }
+                }
+            }
+            if cidaas.useBiometric {
+                if let biometricHeaders = try? CidaasHTTPProof.proofHeaders(
+                    urlString: url,
+                    httpMethod: method.rawValue,
+                    useDpop: false,
+                    useBiometric: true,
+                    biometricLocalizedReason: cidaas.biometricProofLocalizedReason
+                ) {
+                    for (key, value) in biometricHeaders where mergedExtraHeaders[key] == nil {
+                        mergedExtraHeaders[key] = value
+                    }
+                }
+            }
+        }
+
+        for (key, value) in mergedExtraHeaders {
             headers[key] = value
         }
         if let locale = bodyParams?["locale"] as? String {
@@ -73,12 +120,15 @@ public class SessionManager {
         print("===================Payload=============")
         print(bodyParams)
         print("=======================================")
-        
-        session.request(url, method: method, parameters: bodyParams, encoding: JSONEncoding.default, headers: headers).validate().responseString(encoding: .utf8) { response in
-            self.responseRedirect(response: response, callback: callback)
-        }
+
+        session.request(url, method: method, parameters: bodyParams, encoding: JSONEncoding.default, headers: headers)
+            .redirect(using: Redirector.doNotFollow)
+            .validate(statusCode: 200..<303)
+            .responseString(encoding: .utf8, emptyResponseCodes: Set([204, 205, 302])) { response in
+                self.responseRedirect(response: response, callback: callback)
+            }
     }
-    
+
     func uploadPhoto(url: URLRequest, parameters: [String: String], photo: UIImage, callback: @escaping (String?, WebAuthError?) -> Void) {
         var urlReq: URLRequest = url
         session.upload(multipartFormData: { multipartFormData in
@@ -118,6 +168,16 @@ public class SessionManager {
             }
             if (response.response?.statusCode == 204) {
                 callback(nil, WebAuthError.shared.serviceFailureException(errorCode: 204, errorMessage: "No data found", statusCode: response.response?.statusCode ?? 400))
+                return
+            }
+            if response.response?.statusCode == 302 {
+                let loc = response.response?.headers.value(for: "Location")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if loc.isEmpty {
+                    callback(nil, WebAuthError.shared.serviceFailureException(errorCode: 302, errorMessage: "302 without Location header", statusCode: 302))
+                } else {
+                    callback(loc, nil)
+                }
+                return
             }
             else if response.data != nil {
                 var dataResponse = String(decoding: response.data!, as: UTF8.self)
@@ -130,6 +190,13 @@ public class SessionManager {
             
             break
         case .failure(let error):
+            if response.response?.statusCode == 302 {
+                let loc = response.response?.headers.value(for: "Location")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !loc.isEmpty {
+                    callback(loc, nil)
+                    return
+                }
+            }
             if error._domain == NSURLErrorDomain {
                 // return failure
                 callback(nil, WebAuthError.shared.netWorkTimeoutException())

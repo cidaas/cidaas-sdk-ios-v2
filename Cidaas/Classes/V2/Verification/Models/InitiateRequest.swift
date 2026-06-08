@@ -12,6 +12,8 @@ public class InitiateRequest: Codable {
     public init() {}
     
     public var sub: String = ""
+    public var identifier: String = ""
+    public var medium_id: String = ""
     public var request_id: String = ""
     public var usage_type: String = ""
     public var device_id: String = ""

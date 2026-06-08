@@ -516,7 +516,7 @@ public class VerificationPresenter {
     }
     
     
-    public func cancelQr(cancelQrResult: String?, errorResponse: WebAuthError?, callback: @escaping (Result<CancelQrResponse>) -> Void) {
+    public func cancelAuthentication(cancelAuthenticationResult: String?, errorResponse: WebAuthError?, callback: @escaping (Result<CancelAuthenticationResponse>) -> Void) {
         if errorResponse != nil {
             logw(errorResponse!.errorMessage, cname: "cidaas-sdk-verification-error-log")
             callback(Result.failure(error: errorResponse!))
@@ -524,17 +524,39 @@ public class VerificationPresenter {
         else {
             let decoder = JSONDecoder()
             do {
-                let data = cancelQrResult!.data(using: .utf8)!
+                let data = cancelAuthenticationResult!.data(using: .utf8)!
                 // decode the json data to object
-                let cancelQrResp = try decoder.decode(CancelQrResponse.self, from: data)
+                let cancelAuthenticationResp = try decoder.decode(CancelAuthenticationResponse.self, from: data)
                 
-                logw(cancelQrResult ?? "Empty response string", cname: "cidaas-sdk-verification-success-log")
+                logw(cancelAuthenticationResult ?? "Empty response string", cname: "cidaas-sdk-verification-success-log")
                 // return success
-                callback(Result.success(result: cancelQrResp))
+                callback(Result.success(result: cancelAuthenticationResp))
             }
             catch(let error) {
                 // return failure
-                logw("\(String(describing: error)) JSON parsing issue, Response: \(String(describing: cancelQrResult))", cname: "cidaas-sdk-verification-error-log")
+                logw("\(String(describing: error)) JSON parsing issue, Response: \(String(describing: cancelAuthenticationResult))", cname: "cidaas-sdk-verification-error-log")
+                callback(Result.failure(error: WebAuthError.shared.serviceFailureException(errorCode: 400, errorMessage: error.localizedDescription, statusCode: 400)))
+            }
+        }
+    }
+
+    public func cancelEnrollmentSetup(
+        cancelSetupResult: String?,
+        errorResponse: WebAuthError?,
+        callback: @escaping (Result<EnrollResponse>) -> Void
+    ) {
+        if errorResponse != nil {
+            logw(errorResponse!.errorMessage, cname: "cidaas-sdk-verification-error-log")
+            callback(Result.failure(error: errorResponse!))
+        } else {
+            let decoder = JSONDecoder()
+            do {
+                let data = cancelSetupResult!.data(using: .utf8)!
+                let cancelSetupResp = try decoder.decode(EnrollResponse.self, from: data)
+                logw(cancelSetupResult ?? "Empty response string", cname: "cidaas-sdk-verification-success-log")
+                callback(Result.success(result: cancelSetupResp))
+            } catch let error {
+                logw("\(String(describing: error)) JSON parsing issue, Response: \(String(describing: cancelSetupResult))", cname: "cidaas-sdk-verification-error-log")
                 callback(Result.failure(error: WebAuthError.shared.serviceFailureException(errorCode: 400, errorMessage: error.localizedDescription, statusCode: 400)))
             }
         }

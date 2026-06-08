@@ -19,6 +19,7 @@ public class CidaasNative {
     var sharedResetPasswordViewController: ResetPasswordViewController
     var sharedRegistrationViewController: RegistrationViewController
     var sharedChangePasswordViewController: ChangePasswordViewController
+    var sharedSetPasswordViewController: SetPasswordViewController
     var sharedLinkUnlinkViewController: LinkUnlinkViewController
     var sharedLoginViewController: LoginViewController
     var sharedLogoutController: LogoutController
@@ -36,6 +37,7 @@ public class CidaasNative {
         sharedResetPasswordViewController = ResetPasswordViewController.shared
         sharedRegistrationViewController = RegistrationViewController.shared
         sharedChangePasswordViewController = ChangePasswordViewController.shared
+        sharedSetPasswordViewController = SetPasswordViewController.shared
         sharedLinkUnlinkViewController = LinkUnlinkViewController.shared
         sharedLoginViewController = LoginViewController.shared
         sharedLogoutController = LogoutController.shared
@@ -142,6 +144,11 @@ public class CidaasNative {
     // Change password
     public func changePassword(access_token: String, incomingData : ChangePasswordEntity, callback: @escaping(Result<ChangePasswordResponseEntity>) -> Void) {
         sharedChangePasswordViewController.changePassword(access_token: access_token, incomingData: incomingData, callback: callback)
+    }
+
+    // Set password (first-time / profile)
+    public func setPassword(access_token: String, incomingData: SetPasswordEntity, callback: @escaping (Result<SetPasswordResponseEntity>) -> Void) {
+        sharedSetPasswordViewController.setPassword(access_token: access_token, incomingData: incomingData, callback: callback)
     }
     
     // link user

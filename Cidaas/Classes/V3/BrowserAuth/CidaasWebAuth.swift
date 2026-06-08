@@ -43,13 +43,6 @@ extension Cidaas {
     }
 }
 
-/// Same as ``Cidaas/WebAuth/handleRedirect(_:)`` (legacy type name).
-public enum CidaasOAuthRedirectHandler {
-    public static func handleRedirect(_ url: URL) {
-        Cidaas.WebAuth.handleRedirect(url)
-    }
-}
-
 enum BrowserAuthPerform {
 
     static func withPropertyFile<T>(
@@ -136,22 +129,6 @@ enum BrowserAuthPerform {
             LogoutWithBrowserController.shared.logoutWithBrowser(
                 delegate: viewController,
                 sub: sub,
-                properties: props,
-                callback: completion
-            )
-        }
-    }
-
-    static func startLogout(
-        presentingFrom viewController: UIViewController,
-        accessToken: String,
-        completion: @escaping (Result<Bool>) -> Void
-    ) {
-        withPropertyFile(completion: completion) { props in
-            Cidaas.shared.browserLogoutCallback = completion
-            LogoutWithBrowserController.shared.logoutWithBrowser(
-                delegate: viewController,
-                accessToken: accessToken,
                 properties: props,
                 callback: completion
             )

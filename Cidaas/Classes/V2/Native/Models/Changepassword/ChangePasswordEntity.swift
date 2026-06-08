@@ -14,6 +14,7 @@ public class ChangePasswordEntity : Codable {
     public var confirm_password: String = ""
     public var new_password: String = ""
     public var old_password: String = ""
+    public var sub: String = ""
     public var identityId: String = ""
     public var logout_option: String = ""
     

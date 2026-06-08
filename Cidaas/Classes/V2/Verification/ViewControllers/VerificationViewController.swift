@@ -115,7 +115,19 @@ public class VerificationViewController {
     public func getDeviceConfiguredList(mfaListRequest: MFAListRequest, callback: @escaping(Result<MFAListResponse>) -> Void) {
         VerificationInteractor.shared.getDeviceConfiguredList(mfaListRequest: mfaListRequest, callback: callback)
     }
-    public func cancelQr(verificationType: String, cancelQrRequest: CancelQrRequest, callback: @escaping(Result<CancelQrResponse>) -> Void) {
-        VerificationInteractor.shared.cancelQr(verificationType: verificationType, cancelQrRequest: cancelQrRequest, callback: callback)
+    public func cancelAuthentication(verificationType: String, cancelAuthenticationRequest: CancelExchangeRequest, callback: @escaping(Result<CancelAuthenticationResponse>) -> Void) {
+        VerificationInteractor.shared.cancelAuthentication(verificationType: verificationType, cancelAuthenticationRequest: cancelAuthenticationRequest, callback: callback)
+    }
+
+    public func cancelEnrollmentSetup(
+        verificationType: String,
+        cancelSetupRequest: CancelExchangeRequest,
+        callback: @escaping (Result<EnrollResponse>) -> Void
+    ) {
+        VerificationInteractor.shared.cancelEnrollmentSetup(
+            verificationType: verificationType,
+            cancelSetupRequest: cancelSetupRequest,
+            callback: callback
+        )
     }
 }

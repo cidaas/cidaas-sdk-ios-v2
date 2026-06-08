@@ -52,6 +52,6 @@ public class ChangePasswordServiceWorker {
         // construct url
         urlString = baseURL + sharedURL.getChangePasswordURL()
         
-        sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams, extraheaders: headers, callback: callback)
+        sharedSession.startSession(url: urlString, method: .put, parameters: bodyParams, extraheaders: headers, callback: callback)
     }
 }

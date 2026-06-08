@@ -11,9 +11,16 @@ public class ChangePasswordURLHelper {
     
     public static var shared : ChangePasswordURLHelper = ChangePasswordURLHelper()
     
-    public var changePasswordURL = "/users-srv/changepassword"
+    /// `PUT /password-srv/password` — change password (authenticated user).
+    public var changePasswordURL = "/password-srv/password"
+    /// `POST /password-srv/password` — set password when none configured (authenticated user).
+    public var setPasswordURL = "/password-srv/password"
     
     public func getChangePasswordURL() -> String {
         return changePasswordURL
+    }
+
+    public func getSetPasswordURL() -> String {
+        return setPasswordURL
     }
 }
