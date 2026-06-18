@@ -43,6 +43,7 @@ public enum CidaasMFAVerificationType: String, CaseIterable {
     case sms = "SMS"
     case ivr = "IVR"
     case backupCode = "BACKUPCODE"
+    case password = "PASSWORD"
 }
 
 public struct CidaasMFAEnrollmentInitiationResult {
@@ -397,6 +398,7 @@ public final class CidaasMFAAuthenticationBuilder {
     public func verification(
         exchangeId: String? = nil,
         otp: String? = nil,
+        password: String? = nil,
         pattern: String? = nil,
         pushNumber: String? = nil,
         requestId: String? = nil,
@@ -419,7 +421,7 @@ public final class CidaasMFAAuthenticationBuilder {
         }
         guard let passCode = MFAPassCode.resolve(
             verificationType: verificationType,
-            otp: otp,
+            otp: password ?? otp,
             pattern: pattern,
             pushNumber: pushNumber
         ) else {
@@ -432,7 +434,7 @@ public final class CidaasMFAAuthenticationBuilder {
         auth.exchange_id = resolvedExchange
         auth.request_id = resolvedRequestId
         auth.usage_type = resolvedUsageType
-        auth.pass_code = passCode
+        auth.applyVerificationCredential(verificationType: verificationType, value: passCode)
         auth.attempt = attempt
         auth.localizedReason = localizedReason
         auth.device_id = MFA.deviceId()
@@ -746,6 +748,9 @@ private enum MFAPassCode {
         case VerificationTypes.PATTERN.rawValue:
             let code = pattern ?? otp ?? ""
             return code.isEmpty ? nil : code
+        case VerificationTypes.PASSWORD.rawValue:
+            let code = otp ?? ""
+            return code.isEmpty ? nil : code
         case VerificationTypes.TOUCH.rawValue, VerificationTypes.FACE.rawValue:
             return ""
         default:
@@ -760,6 +765,8 @@ private enum MFAPassCode {
             return "pushNumber is required for PUSH"
         case VerificationTypes.PATTERN.rawValue:
             return "pattern encoding is required for PATTERN"
+        case VerificationTypes.PASSWORD.rawValue:
+            return "password is required for PASSWORD (pass via password)"
         default:
             return "otp or pattern is required"
         }

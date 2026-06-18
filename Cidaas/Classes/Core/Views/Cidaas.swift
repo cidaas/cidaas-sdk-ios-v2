@@ -60,73 +60,6 @@ public class Cidaas {
         }
     }
 
-    /// When `true`, ``SessionManager`` adds a `DPoP` proof header to outgoing requests (iOS 14+).
-    public var useDpop: Bool = false
-
-    /// When `true`, ``SessionManager`` adds a `Biometric` proof header (may prompt Face ID / Touch ID; iOS 14+).
-    public var useBiometric: Bool = false
-
-    /// Localized reason shown when ``useBiometric`` triggers a biometric prompt.
-    public var biometricProofLocalizedReason: String = "Verify your identity"
-
-    // MARK: - Public key pinning
-
-    /// Enables TLS public-key hash pinning for SDK HTTP traffic (Alamofire ``SessionManager``).
-    ///
-    /// Pins SHA-256 SPKI hashes (Base64) — no `.cer` bundle files required. Default hashes come from
-    /// ``CidaasPublicKeyPinningConfiguration`` (`primaryPublicKeySHA256Base64`, `backupPublicKeySHA256Base64`).
-    ///
-    /// - Parameters:
-    ///   - trustedPublicKeyHashes: Base64 SHA-256(SPKI) hashes. When `nil`, uses ``CidaasPublicKeyPinningConfiguration/defaultTrustedHashes``.
-    ///   - pinnedHosts: Host names only (e.g. `api.example.com`). When `nil` or empty, uses the host from `DomainURL` in the property file.
-    ///   - validateHost: Validates the certificate hostname (recommended `true` in production).
-    ///   - performDefaultValidation: Run system trust evaluation in addition to pinning (recommended `true`).
-    public func setPublicKeyPinning(
-        trustedPublicKeyHashes: [String]? = nil,
-        pinnedHosts: [String]? = nil,
-        validateHost: Bool = true,
-        performDefaultValidation: Bool = true
-    ) {
-        let hosts = Self.resolvePinnedHosts(explicit: pinnedHosts)
-        let hashes = trustedPublicKeyHashes ?? CidaasPublicKeyPinningConfiguration.defaultTrustedHashes
-        guard !hashes.isEmpty else {
-            logw("setPublicKeyPinning: no trusted hashes; set CidaasPublicKeyPinningConfiguration or pass trustedPublicKeyHashes.", cname: "cidaas-sdk-error-log")
-            return
-        }
-        guard !hosts.isEmpty else {
-            logw("setPublicKeyPinning: no pinned hosts; set DomainURL or pass pinnedHosts.", cname: "cidaas-sdk-error-log")
-            return
-        }
-        let options = CidaasPublicKeyPinningOptions(
-            trustedPublicKeyHashes: hashes,
-            pinnedHosts: hosts,
-            validateHost: validateHost,
-            performDefaultValidation: performDefaultValidation
-        )
-        SessionManager.shared.setPublicKeyPinning(options)
-        logw("Public key pinning enabled for hosts: \(hosts.joined(separator: ", "))", cname: "cidaas-sdk-info-log")
-    }
-
-    /// Disables public-key pinning and restores the default Alamofire session.
-    public func clearPublicKeyPinning() {
-        SessionManager.shared.setPublicKeyPinning(nil)
-        logw("Public key pinning disabled.", cname: "cidaas-sdk-info-log")
-    }
-
-    private static func resolvePinnedHosts(explicit: [String]?) -> [String] {
-        if let explicit {
-            let trimmed = explicit
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
-                .filter { !$0.isEmpty }
-            if !trimmed.isEmpty { return trimmed }
-        }
-        if let domain = DBHelper.shared.getPropertyFile()?["DomainURL"],
-           let host = CidaasPublicKeyPinningLoader.hostFromDomainURL(domain) {
-            return [host.lowercased()]
-        }
-        return []
-    }
-
     // constructor
     public init(storage : TransactionStore = TransactionStore.shared) {
         // set device info in local
@@ -403,17 +336,23 @@ public class Cidaas {
             let delegate = LoginController.shared.delegate as! UIViewController
             delegate.dismiss(animated: true, completion: nil)
         }
-        
-        if browserCallback != nil  {
+
+        // Logout redirect has no authorization code — must run before the login callback branch.
+        if browserLogoutCallback != nil {
+            let logoutCallback = browserLogoutCallback
+            browserLogoutCallback = nil
+            DispatchQueue.main.async {
+                logoutCallback?(Result.success(result: true))
+            }
+            return
+        }
+
+        if browserCallback != nil {
             let code = url.valueOf("code") ?? ""
             if code != "" {
                 AccessTokenController.shared.getAccessToken(code: code, callback: browserCallback!)
             }
-        } else if browserLogoutCallback != nil {
-                DispatchQueue.main.async {
-                    self.browserLogoutCallback(Result.success(result: true))
-                }
-            }
+        }
     }
     
     // call biometrics

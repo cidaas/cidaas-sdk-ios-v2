@@ -202,7 +202,9 @@ public class AccessTokenController {
         let milliseconds = Date().timeIntervalSince1970
         let seconds = Int64(milliseconds)
         accessTokenModel.seconds = seconds
-        
+
+        CidaasHTTPProofToken.persistDpopBindingIfNeeded(from: accessTokenEntity)
+
         // save access token in local db
         DBHelper.shared.setAccessToken(accessTokenModel: accessTokenModel)
         

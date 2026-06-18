@@ -8,13 +8,14 @@ import Alamofire
 
 extension Cidaas {
 
-    /// Device registration entry point (App Attest or Firebase App Check + DPoP + biometric proofs). iOS 14+. Call on ``Cidaas/shared``, e.g. `Cidaas.shared.device()`.
+    /// Device registration entry point (App Attest or Firebase App Check + DPoP-bound attestation JWT). iOS 14+. Call on ``Cidaas/shared``, e.g. `Cidaas.shared.device()`.
     public func device() -> CidaasDevice {
         CidaasDevice()
     }
 }
 
-/// Registers this iOS device using App Attest or Firebase App Check (per initiate `provider`), plus DPoP and biometric-bound keys.
+/// Registers this iOS device using App Attest or Firebase App Check (per initiate `provider`).
+/// Verify sends a `dpop+jwt` in `attestation` (platform attestation + biometric public key DER in the payload).
 public final class CidaasDevice {
 
     /// Optional hook to supply a Firebase App Check JWT when `provider` is `firebase`.
@@ -61,8 +62,7 @@ public final class CidaasDevice {
         return err
     }
 
-    /// Full flow: request session + nonce, then attest the app and complete registration with Face ID / Touch ID.
-    /// Requires `NSFaceIDUsageDescription` in the host app Info.plist.
+    /// Full flow: request session + nonce, then attest the app and complete registration.
     @available(iOS 14.0, *)
     public func registerDevice(
         clientId: String,
@@ -284,10 +284,20 @@ public final class CidaasDevice {
                 SessionManager.shared.startSession(
                     url: urlString,
                     method: .post,
-                    parameters: prepared.bodyParams,
-                    extraheaders: prepared.extraHeaders
+                    parameters: prepared.bodyParams
                 ) { responseString, error in
                     if let error {
+                        if let alreadyRegistered = self.alreadyRegisteredVerifyResult(
+                            responseString: responseString,
+                            error: error
+                        ) {
+                            self.persistDeviceId(alreadyRegistered.deviceId)
+                            self.logDeviceRegistration("verify", response: responseString)
+                            DispatchQueue.main.async {
+                                completion(.success(result: alreadyRegistered))
+                            }
+                            return
+                        }
                         self.logDeviceRegistration("verify", response: responseString, error: error)
                         DispatchQueue.main.async {
                             completion(.failure(error: error))
@@ -308,6 +318,20 @@ public final class CidaasDevice {
                     }
                     do {
                         let decoded = try JSONDecoder().decode(DeviceRegistrationVerifyAPIResponse.self, from: data)
+                        if decoded.status == 409 {
+                            if let alreadyRegistered = self.alreadyRegisteredVerifyResult(
+                                responseString: responseString,
+                                error: nil,
+                                decoded: decoded
+                            ) {
+                                self.persistDeviceId(alreadyRegistered.deviceId)
+                                self.logDeviceRegistration("verify", response: responseString)
+                                DispatchQueue.main.async {
+                                    completion(.success(result: alreadyRegistered))
+                                }
+                                return
+                            }
+                        }
                         guard decoded.success, let payload = decoded.data else {
                             let err = WebAuthError.shared.serviceFailureException(
                                 errorCode: Int(decoded.status),
@@ -321,9 +345,7 @@ public final class CidaasDevice {
                             return
                         }
                         let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                        var info = DBHelper.shared.getDeviceInfo()
-                        info.deviceId = deviceId
-                        DBHelper.shared.setDeviceInfo(deviceInfo: info)
+                        self.persistDeviceId(deviceId)
                         self.logDeviceRegistration("verify", response: responseString)
                         DispatchQueue.main.async {
                             completion(.success(result: DeviceRegistrationVerifyResult(deviceId: deviceId)))
@@ -352,5 +374,46 @@ public final class CidaasDevice {
                 }
             }
         }
+    }
+
+    private func persistDeviceId(_ deviceId: String) {
+        var info = DBHelper.shared.getDeviceInfo()
+        info.deviceId = deviceId
+        DBHelper.shared.setDeviceInfo(deviceInfo: info)
+    }
+
+    /// HTTP 409 means the device is already registered — treat as success for the app flow.
+    private func alreadyRegisteredVerifyResult(
+        responseString: String?,
+        error: WebAuthError?,
+        decoded: DeviceRegistrationVerifyAPIResponse? = nil
+    ) -> DeviceRegistrationVerifyResult? {
+        let statusFromError = error?.statusCode == 409
+        let statusFromBody = decoded?.status == 409
+        let statusFromJSON: Bool = {
+            guard let responseString, let data = responseString.data(using: .utf8),
+                  let parsed = try? JSONDecoder().decode(DeviceRegistrationVerifyAPIResponse.self, from: data)
+            else { return false }
+            return parsed.status == 409
+        }()
+        guard statusFromError || statusFromBody || statusFromJSON else { return nil }
+
+        if let responseString, let data = responseString.data(using: .utf8),
+           let parsed = try? JSONDecoder().decode(DeviceRegistrationVerifyAPIResponse.self, from: data),
+           let payload = parsed.data {
+            let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !deviceId.isEmpty {
+                return DeviceRegistrationVerifyResult(deviceId: deviceId)
+            }
+        }
+
+        let stored = DBHelper.shared.getDeviceInfo().deviceId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !stored.isEmpty {
+            return DeviceRegistrationVerifyResult(deviceId: stored)
+        }
+
+        let resolved = SDKDeviceIdResolver.resolve().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !resolved.isEmpty else { return nil }
+        return DeviceRegistrationVerifyResult(deviceId: resolved)
     }
 }

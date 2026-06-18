@@ -36,7 +36,7 @@ public extension Cidaas {
 
     func getRequestID() async throws -> String {
         try await handleAsyncCall {
-            CidaasNative.shared.getRequestId(callback: $0)
+            Cidaas.shared.publicAPI().requestId(extraParams: [:], completion: $0)
         }.data.requestId
     }
 

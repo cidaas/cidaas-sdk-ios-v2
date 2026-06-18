@@ -18,4 +18,5 @@ public enum VerificationTypes : String {
     case SMS = "SMS"
     case IVR = "IVR"
     case BACKUPCODE = "BACKUPCODE"
+    case PASSWORD = "PASSWORD"
 }

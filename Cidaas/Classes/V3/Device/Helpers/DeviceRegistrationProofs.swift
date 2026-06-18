@@ -10,10 +10,9 @@ enum DeviceRegistrationProofs {
 
     struct PreparedVerificationRequest {
         let bodyParams: [String: Any]
-        let extraHeaders: [String: String]
     }
 
-    /// Uses the same DPoP/biometric keys as ``Cidaas/shared`` `useDpop` / `useBiometric`.
+    /// Builds verify body: `attestation` is a `dpop+jwt` wrapping platform attestation and `biometric_public_key_der`.
     static func prepareVerificationRequest(
         verificationURLString: String,
         sessionId: String,
@@ -24,36 +23,22 @@ enum DeviceRegistrationProofs {
     ) throws -> PreparedVerificationRequest {
         let attestationValue = attestation.trimmingCharacters(in: .whitespacesAndNewlines)
         let keyIdB64 = keyId.trimmingCharacters(in: .whitespacesAndNewlines)
-        let biometricReason = "Verify your identity to register this device"
-        let extraHeaders = try CidaasHTTPProof.proofHeaders(
-            urlString: verificationURLString,
-            httpMethod: "POST",
-            useDpop: true,
-            useBiometric: true,
-            biometricLocalizedReason: biometricReason
+        let material = try CidaasHTTPProof.loadDeviceRegistrationMaterial()
+        let attestationJWT = try material.attestationJWT(
+            rawAttestation: attestationValue,
+            verificationURLString: verificationURLString,
+            httpMethod: "POST"
         )
-        let thumbprints = try CidaasHTTPProof.jwkThumbprints(
-            useDpop: true,
-            useBiometric: true,
-            biometricLocalizedReason: biometricReason
-        )
-        guard let dpopThumbprint = thumbprints.dpop, let biometricThumbprint = thumbprints.biometric else {
-            throw NSError(
-                domain: "CidaasDeviceRegistration",
-                code: 11,
-                userInfo: [NSLocalizedDescriptionKey: "DPoP and biometric proofs are required for device registration"]
-            )
-        }
 
         let bodyParams: [String: Any] = [
             "session_id": sessionId.lowercased(),
-            "attestation": attestationValue,
+            "attestation": attestationJWT,
             "key_id": keyIdB64,
             "app_version": appVersion,
             "platform": platform,
-            "dpop_jwk_thumbprint": dpopThumbprint,
-            "biometric_jwk_thumbprint": biometricThumbprint,
+            "dpop_jwk_thumbprint": material.dpopThumbprint,
+            "biometric_jwk_thumbprint": material.biometricThumbprint,
         ]
-        return PreparedVerificationRequest(bodyParams: bodyParams, extraHeaders: extraHeaders)
+        return PreparedVerificationRequest(bodyParams: bodyParams)
     }
 }

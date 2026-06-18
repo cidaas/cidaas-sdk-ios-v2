@@ -17,22 +17,11 @@ public class SessionManager {
     var deviceInfo: DeviceInfoModel
     var push_id: String
 
-    private var publicKeyPinningOptions: CidaasPublicKeyPinningOptions?
-    private let sessionLock = NSLock()
-    
     public init() {
         deviceInfo = DBHelper.shared.getDeviceInfo()
         push_id = DBHelper.shared.getFCM()
         headers = Self.makeDefaultHeaders(deviceInfo: deviceInfo)
-        session = Self.makeSession(headers: headers, pinningOptions: nil)
-    }
-
-    /// Rebuilds the Alamofire ``Session`` with optional public-key hash pinning (call from ``Cidaas/setPublicKeyPinning``).
-    func setPublicKeyPinning(_ options: CidaasPublicKeyPinningOptions?) {
-        sessionLock.lock()
-        publicKeyPinningOptions = options
-        session = Self.makeSession(headers: headers, pinningOptions: options)
-        sessionLock.unlock()
+        session = Self.makeSession(headers: headers)
     }
 
     private static func makeDefaultHeaders(deviceInfo: DeviceInfoModel) -> HTTPHeaders {
@@ -48,20 +37,19 @@ public class SessionManager {
         return headers
     }
 
-    private static func makeSession(
-        headers: HTTPHeaders,
-        pinningOptions: CidaasPublicKeyPinningOptions?
-    ) -> Session {
+    private static func makeSession(headers: HTTPHeaders) -> Session {
         let configuration = URLSessionConfiguration.af.default
         configuration.headers = headers
-        let serverTrustManager = pinningOptions.flatMap { CidaasCertificatePinning.makeServerTrustManager(options: $0) }
-        if let serverTrustManager {
-            return Session(configuration: configuration, serverTrustManager: serverTrustManager)
-        }
         return Session(configuration: configuration)
     }
     
-    func startSession(url: String, method: HTTPMethod, parameters: [String: Any]?, extraheaders: [String: String] = [String: String](), callback: @escaping (String?, WebAuthError?) -> Void) {
+    func startSession(
+        url: String,
+        method: HTTPMethod,
+        parameters: [String: Any]?,
+        extraheaders: [String: String] = [String: String](),
+        callback: @escaping (String?, WebAuthError?) -> Void
+    ) {
         
         var bodyParams = parameters
         
@@ -75,53 +63,33 @@ public class SessionManager {
             bodyParams!["push_id"] = DBHelper.shared.getFCM()
         }
         
-        var mergedExtraHeaders = extraheaders
-        if #available(iOS 14.0, *) {
-            let cidaas = Cidaas.shared
-            if cidaas.useDpop {
-                if let dpopHeaders = try? CidaasHTTPProof.proofHeaders(
-                    urlString: url,
-                    httpMethod: method.rawValue,
-                    useDpop: true,
-                    useBiometric: false,
-                    biometricLocalizedReason: cidaas.biometricProofLocalizedReason
-                ) {
-                    for (key, value) in dpopHeaders where mergedExtraHeaders[key] == nil {
-                        mergedExtraHeaders[key] = value
-                    }
-                }
-            }
-            if cidaas.useBiometric {
-                if let biometricHeaders = try? CidaasHTTPProof.proofHeaders(
-                    urlString: url,
-                    httpMethod: method.rawValue,
-                    useDpop: false,
-                    useBiometric: true,
-                    biometricLocalizedReason: cidaas.biometricProofLocalizedReason
-                ) {
-                    for (key, value) in biometricHeaders where mergedExtraHeaders[key] == nil {
-                        mergedExtraHeaders[key] = value
-                    }
+        var requestHeaders = headers
+        if CidaasHTTPProofToken.shouldSendDpopHeader(for: url), #available(iOS 14.0, *) {
+            if let dpopHeaders = try? CidaasHTTPProof.dpopProofHeader(
+                urlString: url,
+                httpMethod: method.rawValue
+            ) {
+                for (key, value) in dpopHeaders where extraheaders[key] == nil {
+                    requestHeaders[key] = value
                 }
             }
         }
-
-        for (key, value) in mergedExtraHeaders {
-            headers[key] = value
+        for (key, value) in extraheaders {
+            requestHeaders[key] = value
         }
         if let locale = bodyParams?["locale"] as? String {
-            headers["Accept-Language"]  = locale
+            requestHeaders["Accept-Language"] = locale
         }
         
         print("===================Header==============")
-        print(headers)
+        print(requestHeaders)
         print("===================url=================")
         print(url)
         print("===================Payload=============")
         print(bodyParams)
         print("=======================================")
 
-        session.request(url, method: method, parameters: bodyParams, encoding: JSONEncoding.default, headers: headers)
+        session.request(url, method: method, parameters: bodyParams, encoding: JSONEncoding.default, headers: requestHeaders)
             .redirect(using: Redirector.doNotFollow)
             .validate(statusCode: 200..<303)
             .responseString(encoding: .utf8, emptyResponseCodes: Set([204, 205, 302])) { response in
@@ -130,14 +98,21 @@ public class SessionManager {
     }
 
     func uploadPhoto(url: URLRequest, parameters: [String: String], photo: UIImage, callback: @escaping (String?, WebAuthError?) -> Void) {
+        guard let uploadImage = photo.jpegData(compressionQuality: 0.8) else {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: "Photo is required for face verification",
+                statusCode: 417
+            ))
+            return
+        }
         var urlReq: URLRequest = url
         session.upload(multipartFormData: { multipartFormData in
             for (key, value) in parameters {
-                multipartFormData.append(value.data(using: .utf8)!, withName: key)
+                guard let data = value.data(using: .utf8) else { continue }
+                multipartFormData.append(data, withName: key)
             }
-            
-            let uploadImage = photo.jpegData(compressionQuality: 0.01)
-            multipartFormData.append(uploadImage!, withName: "photo", fileName: "photo.jpg", mimeType: "image/jpeg")
+            multipartFormData.append(uploadImage, withName: "photo", fileName: "photo.jpg", mimeType: "image/jpeg")
             urlReq.addValue(multipartFormData.contentType, forHTTPHeaderField: "Content-Type")
         }, with: urlReq)
         .responseString(completionHandler: { data in
