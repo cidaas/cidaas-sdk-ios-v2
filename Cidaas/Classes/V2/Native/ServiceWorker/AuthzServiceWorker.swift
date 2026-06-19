@@ -38,7 +38,7 @@ public class AuthzServiceWorker {
         for(key, value) in extraParams {
             bodyParams[key] = value
         }
-        
+
         // assign base url
         baseURL = (properties["DomainURL"]) ?? ""
         

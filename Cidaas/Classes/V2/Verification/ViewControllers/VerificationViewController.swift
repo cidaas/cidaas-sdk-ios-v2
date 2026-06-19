@@ -20,10 +20,12 @@ public class VerificationViewController {
     }
     
     public func enroll(verificationType: String, photo: UIImage, voice: Data, incomingData: EnrollRequest, callback: @escaping (Result<EnrollResponse>) -> Void) {
-        if (verificationType == VerificationTypes.TOUCH.rawValue) {
+        if verificationType == VerificationTypes.TOUCH.rawValue {
             VerificationInteractor.shared.askForTouchorFaceIdForEnroll(incomingData: incomingData, callback: callback)
-        }
-        else {
+        } else if verificationType == VerificationTypes.FACE.rawValue,
+                  !FacePhotoCapture.hasEncodableJPEG(photo) {
+            VerificationInteractor.shared.askForFacePhotoForEnroll(incomingData: incomingData, callback: callback)
+        } else {
             VerificationInteractor.shared.enroll(verificationType: verificationType, photo: photo, voice: voice, incomingData: incomingData, callback: callback)
         }
     }
@@ -45,10 +47,12 @@ public class VerificationViewController {
     }
     
     public func authenticate(verificationType: String, photo: UIImage, voice: Data, incomingData: AuthenticateRequest, callback: @escaping (Result<AuthenticateResponse>) -> Void) {
-        if (verificationType == VerificationTypes.TOUCH.rawValue) {
+        if verificationType == VerificationTypes.TOUCH.rawValue {
             VerificationInteractor.shared.askForTouchorFaceIdForAuthenticate(incomingData: incomingData, callback: callback)
-        }
-        else {
+        } else if verificationType == VerificationTypes.FACE.rawValue,
+                  !FacePhotoCapture.hasEncodableJPEG(photo) {
+            VerificationInteractor.shared.askForFacePhotoForAuthenticate(incomingData: incomingData, callback: callback)
+        } else {
             VerificationInteractor.shared.authenticate(verificationType: verificationType, photo: photo, voice: voice, incomingData: incomingData, callback: callback)
         }
     }

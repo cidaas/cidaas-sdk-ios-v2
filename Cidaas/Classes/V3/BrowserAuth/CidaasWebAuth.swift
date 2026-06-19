@@ -125,6 +125,7 @@ enum BrowserAuthPerform {
         completion: @escaping (Result<Bool>) -> Void
     ) {
         withPropertyFile(completion: completion) { props in
+            Cidaas.shared.browserCallback = nil
             Cidaas.shared.browserLogoutCallback = completion
             LogoutWithBrowserController.shared.logoutWithBrowser(
                 delegate: viewController,

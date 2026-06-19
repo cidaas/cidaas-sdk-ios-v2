@@ -110,7 +110,12 @@ public class LoginController {
         urlParams["code_challenge"] = properties["Challenge"]
         urlParams["code_challenge_method"] = properties["Method"]
         urlParams["nonce"] = UUID.init().uuidString
-        
+
+        urlParams = CidaasHTTPProofAuthz.mergingDpopJKT(
+            into: urlParams,
+            useDpop: CidaasDpopFlowContext.useDpopForActiveBrowserFlow
+        )
+
         var urlComponents = URLComponents(string : properties["AuthorizationURL"] ?? "")
         urlComponents?.queryItems = []
         
