@@ -6,7 +6,7 @@
 import Foundation
 
 extension Cidaas {
-    /// Pre-login public APIs (OAuth request id, verification catalog). Call on ``Cidaas/shared``, e.g. `Cidaas.shared.publicAPI()`.
+    /// Pre-login public APIs (OAuth request id, verification catalog).
     public func publicAPI() -> CidaasPublicBuilder {
         CidaasPublicBuilder()
     }
@@ -34,7 +34,9 @@ public final class CidaasPublicBuilder {
         completion: @escaping (Result<RequestIdResponseEntity>) -> Void
     ) {
         let params = CidaasHTTPProofAuthz.mergingDpopJKT(into: extraParams, useDpop: dpopOption.useDpop)
-        AuthzInteractor.shared.getRequestId(extraParams: params, callback: completion)
+        AuthzInteractor.shared.getRequestId(extraParams: params) { result in
+            CidaasV3Callback.deliver(result, to: completion)
+        }
     }
 
     /// Lists passwordless sign-in methods for an identifier (`POST /verification-srv/public/graph/user/setup`).
@@ -46,21 +48,21 @@ public final class CidaasPublicBuilder {
         let rid = requestId.trimmingCharacters(in: .whitespacesAndNewlines)
         let id = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rid.isEmpty else {
-            completion(.failure(error: WebAuthError.shared.serviceFailureException(
+            CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
                 errorCode: 417, errorMessage: "request_id is required", statusCode: 417
-            )))
+            )), to: completion)
             return
         }
         guard !id.isEmpty else {
-            completion(.failure(error: WebAuthError.shared.serviceFailureException(
+            CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
                 errorCode: 417, errorMessage: "identifier is required", statusCode: 417
-            )))
+            )), to: completion)
             return
         }
         guard let properties = DBHelper.shared.getPropertyFile() else {
-            completion(.failure(error: WebAuthError.shared.serviceFailureException(
+            CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
                 errorCode: 417, errorMessage: "OAuth properties not loaded", statusCode: 417
-            )))
+            )), to: completion)
             return
         }
 
@@ -77,25 +79,23 @@ public final class CidaasPublicBuilder {
             properties: properties
         ) { response, error in
             if let error {
-                completion(.failure(error: error))
+                CidaasV3Callback.deliver(.failure(error: error), to: completion)
                 return
             }
             guard let response else {
-                completion(.failure(error: WebAuthError.shared.serviceFailureException(
+                CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
                     errorCode: 500, errorMessage: "Empty public configured list response", statusCode: 500
-                )))
+                )), to: completion)
                 return
             }
             do {
                 let data = response.data(using: .utf8) ?? Data()
                 let decoded = try JSONDecoder().decode(PublicConfiguredListResponse.self, from: data)
-                DispatchQueue.main.async { completion(.success(result: decoded)) }
+                CidaasV3Callback.deliver(.success(result: decoded), to: completion)
             } catch {
-                DispatchQueue.main.async {
-                    completion(.failure(error: WebAuthError.shared.serviceFailureException(
-                        errorCode: 500, errorMessage: error.localizedDescription, statusCode: 500
-                    )))
-                }
+                CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
+                    errorCode: 500, errorMessage: error.localizedDescription, statusCode: 500
+                )), to: completion)
             }
         }
     }

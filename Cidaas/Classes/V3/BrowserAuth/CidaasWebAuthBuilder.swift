@@ -8,7 +8,7 @@ import UIKit
 
 extension Cidaas {
 
-    /// Fluent browser sign-in / sign-out (see ``CidaasWebAuthBuilder``). Call on ``Cidaas/shared``, e.g. `Cidaas.shared.webAuth(delegate: self)`.
+    /// Fluent browser sign-in / sign-out (see ``CidaasWebAuthBuilder``).
     /// - Parameter delegate: View controller used to present the system browser / auth UI.
     public func webAuth(delegate: UIViewController) -> CidaasWebAuthBuilder {
         CidaasWebAuthBuilder(delegate: delegate)

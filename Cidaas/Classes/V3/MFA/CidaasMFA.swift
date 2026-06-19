@@ -10,7 +10,7 @@ import UIKit
 
 extension Cidaas {
 
-    /// MFA enrollment and authentication. Call on ``Cidaas/shared``, e.g. `Cidaas.shared.mfa(.totp)`.
+    /// MFA enrollment and authentication.
     public func mfa(_ type: CidaasMFAVerificationType) -> CidaasMFABuilder {
         CidaasMFABuilder(verificationType: type.rawValue)
     }

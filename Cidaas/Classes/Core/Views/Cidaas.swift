@@ -60,6 +60,52 @@ public class Cidaas {
         }
     }
 
+    // Pinning applies to SessionManager HTTP calls. Pass hashes from the app; host falls back to DomainURL.
+    public func setPublicKeyPinning(
+        trustedPublicKeyHashes: [String]? = nil,
+        pinnedHosts: [String]? = nil,
+        validateHost: Bool = true,
+        performDefaultValidation: Bool = true
+    ) {
+        let hosts = Self.resolvePinnedHosts(explicit: pinnedHosts)
+        let hashes = trustedPublicKeyHashes ?? CidaasPublicKeyPinningConfiguration.defaultTrustedHashes
+        guard !hashes.isEmpty else {
+            logw("setPublicKeyPinning: trustedPublicKeyHashes is empty", cname: "cidaas-sdk-error-log")
+            return
+        }
+        guard !hosts.isEmpty else {
+            logw("setPublicKeyPinning: pinnedHosts is empty", cname: "cidaas-sdk-error-log")
+            return
+        }
+        let options = CidaasPublicKeyPinningOptions(
+            trustedPublicKeyHashes: hashes,
+            pinnedHosts: hosts,
+            validateHost: validateHost,
+            performDefaultValidation: performDefaultValidation
+        )
+        SessionManager.shared.setPublicKeyPinning(options)
+        logw("Public key pinning enabled: \(hosts.joined(separator: ", "))", cname: "cidaas-sdk-info-log")
+    }
+
+    public func clearPublicKeyPinning() {
+        SessionManager.shared.setPublicKeyPinning(nil)
+        logw("Public key pinning disabled", cname: "cidaas-sdk-info-log")
+    }
+
+    private static func resolvePinnedHosts(explicit: [String]?) -> [String] {
+        if let explicit {
+            let trimmed = explicit
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+                .filter { !$0.isEmpty }
+            if !trimmed.isEmpty { return trimmed }
+        }
+        if let domain = DBHelper.shared.getPropertyFile()?["DomainURL"],
+           let host = CidaasPublicKeyPinningLoader.hostFromDomainURL(domain) {
+            return [host.lowercased()]
+        }
+        return []
+    }
+
     // constructor
     public init(storage : TransactionStore = TransactionStore.shared) {
         // set device info in local

@@ -8,7 +8,6 @@ import Foundation
 extension Cidaas {
 
     /// Native user registration for custom in-app forms (not hosted browser registration).
-    /// Call on ``Cidaas/shared``, e.g. `Cidaas.shared.nativeRegistration()`.
     public func nativeRegistration() -> CidaasNativeRegistrationBuilder {
         CidaasNativeRegistrationBuilder()
     }
@@ -55,16 +54,17 @@ public final class CidaasNativeRegistrationBuilder {
     ) {
         let rid = requestId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rid.isEmpty else {
-            completion(.failure(error: WebAuthError.shared.serviceFailureException(
+            CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
                 errorCode: 417, errorMessage: "request_id is required", statusCode: 417
-            )))
+            )), to: completion)
             return
         }
         CidaasNative.shared.getRegistrationFields(
             acceptlanguage: acceptLanguage,
             requestId: rid,
-            callback: completion
-        )
+            callback: { result in
+            CidaasV3Callback.deliver(result, to: completion)
+        })
     }
 
     /// Registers a new user with a previously fetched OAuth `request_id`.
@@ -75,32 +75,32 @@ public final class CidaasNativeRegistrationBuilder {
     ) {
         let rid = requestId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !rid.isEmpty else {
-            completion(.failure(error: WebAuthError.shared.serviceFailureException(
+            CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
                 errorCode: 417, errorMessage: "request_id is required", statusCode: 417
-            )))
+            )), to: completion)
             return
         }
         CidaasNative.shared.registerUser(requestId: rid, incomingData: entity) { result in
             switch result {
             case .failure(let error):
-                completion(.failure(error: error))
+                CidaasV3Callback.deliver(.failure(error: error), to: completion)
             case .success(let response):
                 guard response.success else {
-                    completion(.failure(error: WebAuthError.shared.serviceFailureException(
+                    CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
                         errorCode: Int(response.status),
                         errorMessage: "Registration failed (status=\(response.status))",
                         statusCode: Int(response.status)
-                    )))
+                    )), to: completion)
                     return
                 }
                 let data = response.data
-                completion(.success(result: CidaasNativeRegistrationResult(
+                CidaasV3Callback.deliver(.success(result: CidaasNativeRegistrationResult(
                     sub: data.sub,
                     userStatus: data.userStatus,
                     trackId: data.trackId,
                     suggestedAction: data.suggested_action,
                     emailVerified: data.email_verified
-                )))
+                )), to: completion)
             }
         }
     }
@@ -115,7 +115,7 @@ public final class CidaasNativeRegistrationBuilder {
         fetchRequestId(extraParams: extraParams) { [self] ridResult in
             switch ridResult {
             case .failure(let error):
-                completion(.failure(error: error))
+                CidaasV3Callback.deliver(.failure(error: error), to: completion)
             case .success(let requestId):
                 self.registerUser(requestId: requestId, entity: entity, completion: completion)
             }
@@ -131,14 +131,14 @@ public final class CidaasNativeRegistrationBuilder {
         fetchRequestId(extraParams: extraParams) { [self] ridResult in
             switch ridResult {
             case .failure(let error):
-                completion(.failure(error: error))
+                CidaasV3Callback.deliver(.failure(error: error), to: completion)
             case .success(let requestId):
                 self.registrationFields(acceptLanguage: acceptLanguage, requestId: requestId) { fieldsResult in
                     switch fieldsResult {
                     case .failure(let error):
-                        completion(.failure(error: error))
+                        CidaasV3Callback.deliver(.failure(error: error), to: completion)
                     case .success(let fields):
-                        completion(.success(result: (requestId: requestId, fields: fields)))
+                        CidaasV3Callback.deliver(.success(result: (requestId: requestId, fields: fields)), to: completion)
                     }
                 }
             }
@@ -154,26 +154,26 @@ public final class CidaasNativeRegistrationBuilder {
             .requestId(extraParams: extraParams) { result in
                 switch result {
                 case .failure(let error):
-                    completion(.failure(error: error))
+                    CidaasV3Callback.deliver(.failure(error: error), to: completion)
                 case .success(let response):
                     guard response.success else {
-                        completion(.failure(error: WebAuthError.shared.serviceFailureException(
+                        CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
                             errorCode: 2,
                             errorMessage: "authz requestId success=false status=\(response.status)",
                             statusCode: Int(response.status)
-                        )))
+                        )), to: completion)
                         return
                     }
                     let requestId = response.data.requestId.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !requestId.isEmpty else {
-                        completion(.failure(error: WebAuthError.shared.serviceFailureException(
+                        CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
                             errorCode: 3,
                             errorMessage: "Empty requestId in authz response",
                             statusCode: 417
-                        )))
+                        )), to: completion)
                         return
                     }
-                    completion(.success(result: requestId))
+                    CidaasV3Callback.deliver(.success(result: requestId), to: completion)
                 }
             }
     }

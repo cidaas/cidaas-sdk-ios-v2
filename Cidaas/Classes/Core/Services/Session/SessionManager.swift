@@ -17,11 +17,21 @@ public class SessionManager {
     var deviceInfo: DeviceInfoModel
     var push_id: String
 
+    private var publicKeyPinningOptions: CidaasPublicKeyPinningOptions?
+    private let sessionLock = NSLock()
+
     public init() {
         deviceInfo = DBHelper.shared.getDeviceInfo()
         push_id = DBHelper.shared.getFCM()
         headers = Self.makeDefaultHeaders(deviceInfo: deviceInfo)
-        session = Self.makeSession(headers: headers)
+        session = Self.makeSession(headers: headers, pinningOptions: nil)
+    }
+
+    func setPublicKeyPinning(_ options: CidaasPublicKeyPinningOptions?) {
+        sessionLock.lock()
+        publicKeyPinningOptions = options
+        session = Self.makeSession(headers: headers, pinningOptions: options)
+        sessionLock.unlock()
     }
 
     private static func makeDefaultHeaders(deviceInfo: DeviceInfoModel) -> HTTPHeaders {
@@ -37,9 +47,25 @@ public class SessionManager {
         return headers
     }
 
-    private static func makeSession(headers: HTTPHeaders) -> Session {
+    private static func logNetworkRequest(url: String, headers: HTTPHeaders, bodyParams: [String: Any]?) {
+        guard DBHelper.shared.getEnableLog() else { return }
+        logw("HTTP \(url)", cname: "cidaas-sdk-network-log")
+        logw("Headers: \(headers)", cname: "cidaas-sdk-network-log")
+        if let bodyParams {
+            logw("Payload: \(bodyParams)", cname: "cidaas-sdk-network-log")
+        }
+    }
+
+    private static func makeSession(
+        headers: HTTPHeaders,
+        pinningOptions: CidaasPublicKeyPinningOptions?
+    ) -> Session {
         let configuration = URLSessionConfiguration.af.default
         configuration.headers = headers
+        let serverTrustManager = pinningOptions.flatMap { CidaasCertificatePinning.makeServerTrustManager(options: $0) }
+        if let serverTrustManager {
+            return Session(configuration: configuration, serverTrustManager: serverTrustManager)
+        }
         return Session(configuration: configuration)
     }
     
@@ -80,14 +106,8 @@ public class SessionManager {
         if let locale = bodyParams?["locale"] as? String {
             requestHeaders["Accept-Language"] = locale
         }
-        
-        print("===================Header==============")
-        print(requestHeaders)
-        print("===================url=================")
-        print(url)
-        print("===================Payload=============")
-        print(bodyParams)
-        print("=======================================")
+
+        Self.logNetworkRequest(url: url, headers: requestHeaders, bodyParams: bodyParams)
 
         session.request(url, method: method, parameters: bodyParams, encoding: JSONEncoding.default, headers: requestHeaders)
             .redirect(using: Redirector.doNotFollow)
@@ -266,7 +286,9 @@ func extractErrorResponseData(from jsonString: String) -> (errorCode: String?, e
                 }
             }
         } catch {
-            print("Error parsing JSON: \(error.localizedDescription)")
+            if DBHelper.shared.getEnableLog() {
+                logw("Error parsing JSON: \(error.localizedDescription)", cname: "cidaas-sdk-network-log")
+            }
         }
     }
     

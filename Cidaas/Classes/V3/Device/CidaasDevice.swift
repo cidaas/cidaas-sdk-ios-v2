@@ -8,7 +8,7 @@ import Alamofire
 
 extension Cidaas {
 
-    /// Device registration entry point (App Attest or Firebase App Check + DPoP-bound attestation JWT). iOS 14+. Call on ``Cidaas/shared``, e.g. `Cidaas.shared.device()`.
+    /// Device registration (App Attest or Firebase App Check + DPoP-bound attestation JWT). iOS 14+.
     public func device() -> CidaasDevice {
         CidaasDevice()
     }
@@ -35,29 +35,6 @@ public final class CidaasDevice {
 
     fileprivate init() {}
 
-    private static let logCategory = "cidaas-sdk-device-log"
-    private static let initiationPath = "/devices/registration/initiation"
-    private static let verificationPath = "/devices/registration/verification"
-
-    /// Always logs initiate/verify API responses to the Xcode console.
-    private func logDeviceRegistration(_ phase: String, response: String? = nil, error: Error? = nil) {
-        let endpoint = phase == "initiate" ? Self.initiationPath : Self.verificationPath
-        if let response, !response.isEmpty {
-            logw("[CidaasDevice] POST \(endpoint) response: \(response)", cname: Self.logCategory)
-        } else if response != nil {
-            logw("[CidaasDevice] POST \(endpoint) response: (empty body)", cname: Self.logCategory)
-        }
-        if let error {
-            let errorText: String
-            if let webAuth = error as? WebAuthError {
-                errorText = "\(webAuth.errorMessage) (status=\(webAuth.statusCode))"
-            } else {
-                errorText = error.localizedDescription
-            }
-            logw("[CidaasDevice] POST \(endpoint) error: \(errorText)", cname: Self.logCategory)
-        }
-    }
-
     @available(iOS 14.0, *)
     private func appAttestUnavailableError() -> WebAuthError {
         let err = WebAuthError.shared.serviceFailureException(
@@ -81,8 +58,6 @@ public final class CidaasDevice {
                 // Backend returns HTTP 409 on /initiation when the device is already registered.
                 if let alreadyRegistered = self.alreadyRegisteredResult(responseString: nil, error: error) {
                     self.persistDeviceId(alreadyRegistered.deviceId)
-                    self.logDeviceRegistration("initiate", error: error)
-                    logw("[CidaasDevice] POST \(Self.initiationPath) treated HTTP 409 as already registered (deviceId=\(alreadyRegistered.deviceId))", cname: Self.logCategory)
                     completion(.success(result: alreadyRegistered))
                 } else {
                     completion(.failure(error: error))
@@ -163,7 +138,6 @@ public final class CidaasDevice {
 
         SessionManager.shared.startSession(url: urlString, method: .post, parameters: bodyParams) { responseString, error in
             if let error {
-                self.logDeviceRegistration("initiate", response: responseString, error: error)
                 DispatchQueue.main.async {
                     completion(.failure(error: error))
                 }
@@ -171,7 +145,6 @@ public final class CidaasDevice {
             }
             guard let responseString, let data = responseString.data(using: .utf8) else {
                 let err = WebAuthError.shared.serviceFailureException(errorCode: 400, errorMessage: "Empty response", statusCode: 400)
-                self.logDeviceRegistration("initiate", error: err)
                 DispatchQueue.main.async {
                     completion(.failure(error: err))
                 }
@@ -185,7 +158,6 @@ public final class CidaasDevice {
                         errorMessage: "Device registration initiation was not successful.",
                         statusCode: Int(decoded.status)
                     )
-                    self.logDeviceRegistration("initiate", response: responseString, error: err)
                     DispatchQueue.main.async {
                         completion(.failure(error: err))
                     }
@@ -196,7 +168,6 @@ public final class CidaasDevice {
                     nonce: payload.nonce,
                     provider: DeviceRegistrationProvider(apiValue: payload.provider)
                 )
-                self.logDeviceRegistration("initiate", response: responseString)
                 DispatchQueue.main.async {
                     completion(.success(result: result))
                 }
@@ -206,7 +177,6 @@ public final class CidaasDevice {
                     errorMessage: error.localizedDescription,
                     statusCode: 400
                 )
-                self.logDeviceRegistration("initiate", response: responseString, error: err)
                 DispatchQueue.main.async {
                     completion(.failure(error: err))
                 }
@@ -258,7 +228,6 @@ public final class CidaasDevice {
                 case .apple:
                     guard DeviceRegistrationAppAttest.isSupported else {
                         let err = appAttestUnavailableError()
-                        self.logDeviceRegistration("verify", error: err)
                         DispatchQueue.main.async {
                             completion(.failure(error: err))
                         }
@@ -280,7 +249,6 @@ public final class CidaasDevice {
                         errorMessage: "Unsupported device registration provider: \(value)",
                         statusCode: 400
                     )
-                    self.logDeviceRegistration("verify", error: err)
                     DispatchQueue.main.async {
                         completion(.failure(error: err))
                     }
@@ -306,13 +274,11 @@ public final class CidaasDevice {
                             error: error
                         ) {
                             self.persistDeviceId(alreadyRegistered.deviceId)
-                            self.logDeviceRegistration("verify", response: responseString)
                             DispatchQueue.main.async {
                                 completion(.success(result: alreadyRegistered))
                             }
                             return
                         }
-                        self.logDeviceRegistration("verify", response: responseString, error: error)
                         DispatchQueue.main.async {
                             completion(.failure(error: error))
                         }
@@ -324,7 +290,6 @@ public final class CidaasDevice {
                             errorMessage: "Empty response",
                             statusCode: 400
                         )
-                        self.logDeviceRegistration("verify", error: err)
                         DispatchQueue.main.async {
                             completion(.failure(error: err))
                         }
@@ -339,7 +304,6 @@ public final class CidaasDevice {
                                 decoded: decoded
                             ) {
                                 self.persistDeviceId(alreadyRegistered.deviceId)
-                                self.logDeviceRegistration("verify", response: responseString)
                                 DispatchQueue.main.async {
                                     completion(.success(result: alreadyRegistered))
                                 }
@@ -352,7 +316,6 @@ public final class CidaasDevice {
                                 errorMessage: "Device registration verification was not successful.",
                                 statusCode: Int(decoded.status)
                             )
-                            self.logDeviceRegistration("verify", response: responseString, error: err)
                             DispatchQueue.main.async {
                                 completion(.failure(error: err))
                             }
@@ -360,7 +323,6 @@ public final class CidaasDevice {
                         }
                         let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                         self.persistDeviceId(deviceId)
-                        self.logDeviceRegistration("verify", response: responseString)
                         DispatchQueue.main.async {
                             completion(.success(result: DeviceRegistrationVerifyResult(deviceId: deviceId)))
                         }
@@ -370,7 +332,6 @@ public final class CidaasDevice {
                             errorMessage: error.localizedDescription,
                             statusCode: 400
                         )
-                        self.logDeviceRegistration("verify", response: responseString, error: err)
                         DispatchQueue.main.async {
                             completion(.failure(error: err))
                         }
@@ -382,7 +343,6 @@ public final class CidaasDevice {
                     errorMessage: error.localizedDescription,
                     statusCode: 400
                 )
-                self.logDeviceRegistration("verify", error: err)
                 DispatchQueue.main.async {
                     completion(.failure(error: err))
                 }
@@ -397,7 +357,6 @@ public final class CidaasDevice {
     }
 
     /// HTTP 409 means the device is already registered — treat as success for the app flow.
-    /// Backend returns 409 on `/initiation` when a device verification record exists; `/verification` does not emit 409 today.
     private func alreadyRegisteredResult(
         responseString: String?,
         error: WebAuthError?,
