@@ -36,19 +36,25 @@ public final class CidaasDevice {
     fileprivate init() {}
 
     private static let logCategory = "cidaas-sdk-device-log"
+    private static let initiationPath = "/devices/registration/initiation"
+    private static let verificationPath = "/devices/registration/verification"
 
-    /// Logs initiate/verify API responses when SDK logging is enabled.
+    /// Always logs initiate/verify API responses to the Xcode console.
     private func logDeviceRegistration(_ phase: String, response: String? = nil, error: Error? = nil) {
-        guard Cidaas.shared.ENABLE_LOG else { return }
-        if let response {
-            logw("[CidaasDevice] \(phase) response: \(response)", cname: Self.logCategory)
+        let endpoint = phase == "initiate" ? Self.initiationPath : Self.verificationPath
+        if let response, !response.isEmpty {
+            logw("[CidaasDevice] POST \(endpoint) response: \(response)", cname: Self.logCategory)
+        } else if response != nil {
+            logw("[CidaasDevice] POST \(endpoint) response: (empty body)", cname: Self.logCategory)
         }
         if let error {
+            let errorText: String
             if let webAuth = error as? WebAuthError {
-                logw("[CidaasDevice] \(phase) error: \(webAuth.errorMessage) (status=\(webAuth.statusCode))", cname: Self.logCategory)
+                errorText = "\(webAuth.errorMessage) (status=\(webAuth.statusCode))"
             } else {
-                logw("[CidaasDevice] \(phase) error: \(error.localizedDescription)", cname: Self.logCategory)
+                errorText = error.localizedDescription
             }
+            logw("[CidaasDevice] POST \(endpoint) error: \(errorText)", cname: Self.logCategory)
         }
     }
 
@@ -72,7 +78,15 @@ public final class CidaasDevice {
         startRegistration(clientId: clientId, pushId: pushId) { initiateResult in
             switch initiateResult {
             case .failure(error: let error):
-                completion(.failure(error: error))
+                // Backend returns HTTP 409 on /initiation when the device is already registered.
+                if let alreadyRegistered = self.alreadyRegisteredResult(responseString: nil, error: error) {
+                    self.persistDeviceId(alreadyRegistered.deviceId)
+                    self.logDeviceRegistration("initiate", error: error)
+                    logw("[CidaasDevice] POST \(Self.initiationPath) treated HTTP 409 as already registered (deviceId=\(alreadyRegistered.deviceId))", cname: Self.logCategory)
+                    completion(.success(result: alreadyRegistered))
+                } else {
+                    completion(.failure(error: error))
+                }
             case .success(result: let initiate):
                 self.completeRegistration(initiateResult: initiate, completion: completion)
             }
@@ -287,7 +301,7 @@ public final class CidaasDevice {
                     parameters: prepared.bodyParams
                 ) { responseString, error in
                     if let error {
-                        if let alreadyRegistered = self.alreadyRegisteredVerifyResult(
+                        if let alreadyRegistered = self.alreadyRegisteredResult(
                             responseString: responseString,
                             error: error
                         ) {
@@ -319,7 +333,7 @@ public final class CidaasDevice {
                     do {
                         let decoded = try JSONDecoder().decode(DeviceRegistrationVerifyAPIResponse.self, from: data)
                         if decoded.status == 409 {
-                            if let alreadyRegistered = self.alreadyRegisteredVerifyResult(
+                            if let alreadyRegistered = self.alreadyRegisteredResult(
                                 responseString: responseString,
                                 error: nil,
                                 decoded: decoded
@@ -383,7 +397,8 @@ public final class CidaasDevice {
     }
 
     /// HTTP 409 means the device is already registered — treat as success for the app flow.
-    private func alreadyRegisteredVerifyResult(
+    /// Backend returns 409 on `/initiation` when a device verification record exists; `/verification` does not emit 409 today.
+    private func alreadyRegisteredResult(
         responseString: String?,
         error: WebAuthError?,
         decoded: DeviceRegistrationVerifyAPIResponse? = nil
