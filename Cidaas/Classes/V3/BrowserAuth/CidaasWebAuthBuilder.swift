@@ -8,7 +8,7 @@ import UIKit
 
 extension Cidaas {
 
-    /// Fluent browser sign-in / sign-out (see ``CidaasWebAuthBuilder``). Call on ``Cidaas/shared``, e.g. `Cidaas.shared.webAuth(delegate: self)`.
+    /// Fluent browser sign-in / sign-out (see ``CidaasWebAuthBuilder``).
     /// - Parameter delegate: View controller used to present the system browser / auth UI.
     public func webAuth(delegate: UIViewController) -> CidaasWebAuthBuilder {
         CidaasWebAuthBuilder(delegate: delegate)
@@ -25,10 +25,27 @@ public final class CidaasWebAuthBuilder {
 
     private var sessionKind: WebAuthSessionKind = .login
     private var storedExtraParameters: [String: String] = [:]
+    private var dpopOption = CidaasDpopBuilderOption()
     private weak var delegateViewController: UIViewController?
 
     public init(delegate: UIViewController) {
         delegateViewController = delegate
+    }
+
+    /// Enables DPoP for browser auth: `dpop_jkt` on the authorization URL / ``requestId``, and a `DPoP` proof header on `POST /token-srv/token` (code exchange and refresh) (iOS 14+).
+    @discardableResult
+    public func useDpop(_ enabled: Bool = true) -> Self {
+        dpopOption.setUseDpop(enabled)
+        return self
+    }
+
+    /// Fetches an OAuth `request_id` (e.g. before ``social(provider:requestId:)``). Includes `dpop_jkt` when ``useDpop()`` is enabled (iOS 14+).
+    public func requestId(
+        extraParams: [String: String] = [:],
+        completion: @escaping (Result<RequestIdResponseEntity>) -> Void
+    ) {
+        let params = CidaasHTTPProofAuthz.mergingDpopJKT(into: extraParams, useDpop: dpopOption.useDpop)
+        AuthzInteractor.shared.getRequestId(extraParams: params, callback: completion)
     }
 
     @discardableResult
@@ -61,35 +78,37 @@ public final class CidaasWebAuthBuilder {
             }
             return
         }
-        switch sessionKind {
-        case .login:
-            BrowserAuthPerform.startLogin(
-                presentingFrom: viewController,
-                extraParameters: storedExtraParameters,
-                completion: completion
-            )
-        case .registration:
-            BrowserAuthPerform.startRegistration(
-                presentingFrom: viewController,
-                extraParameters: storedExtraParameters,
-                completion: completion
-            )
-        case .social(let provider, let requestId):
-            guard !provider.isEmpty, !requestId.isEmpty else {
-                let error = WebAuthError.shared.propertyMissingException()
-                error.errorMessage = "social(provider:requestId:) requires non-empty values"
-                DispatchQueue.main.async {
-                    completion(.failure(error: error))
+        CidaasDpopFlowContext.runWithUseDpop(dpopOption.useDpop, operation: { wrapped in
+            switch sessionKind {
+            case .login:
+                BrowserAuthPerform.startLogin(
+                    presentingFrom: viewController,
+                    extraParameters: storedExtraParameters,
+                    completion: wrapped
+                )
+            case .registration:
+                BrowserAuthPerform.startRegistration(
+                    presentingFrom: viewController,
+                    extraParameters: storedExtraParameters,
+                    completion: wrapped
+                )
+            case .social(let provider, let requestId):
+                guard !provider.isEmpty, !requestId.isEmpty else {
+                    let error = WebAuthError.shared.propertyMissingException()
+                    error.errorMessage = "social(provider:requestId:) requires non-empty values"
+                    DispatchQueue.main.async {
+                        wrapped(.failure(error: error))
+                    }
+                    return
                 }
-                return
+                BrowserAuthPerform.startSocialLogin(
+                    provider: provider,
+                    requestId: requestId,
+                    presentingFrom: viewController,
+                    completion: wrapped
+                )
             }
-            BrowserAuthPerform.startSocialLogin(
-                provider: provider,
-                requestId: requestId,
-                presentingFrom: viewController,
-                completion: completion
-            )
-        }
+        }, completion: completion)
     }
 
     @available(iOS 13.0, *)

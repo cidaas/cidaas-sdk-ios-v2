@@ -455,7 +455,10 @@ public class VerificationInteractor {
                 let authenticateRequest = AuthenticateRequest()
                 authenticateRequest.sub = initiateSuccessResponse.data.sub
                 authenticateRequest.exchange_id = initiateSuccessResponse.data.exchange_id.exchange_id
-                authenticateRequest.pass_code = incomingData.pass_code
+                authenticateRequest.applyVerificationCredential(
+                    verificationType: incomingData.verificationType,
+                    value: incomingData.pass_code
+                )
                 authenticateRequest.localizedReason = incomingData.localizedReason
                 
                 self.push_selected_number = initiateSuccessResponse.data.push_selected_number
@@ -626,6 +629,40 @@ public class VerificationInteractor {
         }
     }
     
+    public func askForFacePhotoForEnroll(incomingData: EnrollRequest, callback: @escaping (Result<EnrollResponse>) -> Void) {
+        FacePhotoCapture.capture { result in
+            switch result {
+            case .failure(let error):
+                self.sharedPresenter.enroll(enrollResponse: nil, errorResponse: error, callback: callback)
+            case .success(let photo):
+                self.enroll(
+                    verificationType: VerificationTypes.FACE.rawValue,
+                    photo: photo,
+                    voice: Data(),
+                    incomingData: incomingData,
+                    callback: callback
+                )
+            }
+        }
+    }
+
+    public func askForFacePhotoForAuthenticate(incomingData: AuthenticateRequest, callback: @escaping (Result<AuthenticateResponse>) -> Void) {
+        FacePhotoCapture.capture { result in
+            switch result {
+            case .failure(let error):
+                self.sharedPresenter.authenticate(authenticateResponse: nil, errorResponse: error, callback: callback)
+            case .success(let photo):
+                self.authenticate(
+                    verificationType: VerificationTypes.FACE.rawValue,
+                    photo: photo,
+                    voice: Data(),
+                    incomingData: incomingData,
+                    callback: callback
+                )
+            }
+        }
+    }
+
     public func continueMFA(passwordlessRequest: PasswordlessRequest, properties: Dictionary<String, String>, callback: @escaping (Result<LoginResponse>) -> Void) {
         self.passwordlessContinue(incomingData: passwordlessRequest) {
             switch $0 {

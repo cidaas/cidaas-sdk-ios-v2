@@ -8,7 +8,6 @@ import CommonCrypto
 import Foundation
 import Security
 
-/// Validates server trust using SHA-256 hashes of SPKI-encoded public keys (Base64).
 public final class PublicKeyHashTrustEvaluator: ServerTrustEvaluating {
 
     private let trustedPublicKeyHashes: Set<String>
@@ -52,8 +51,6 @@ public final class PublicKeyHashTrustEvaluator: ServerTrustEvaluating {
             )
         }
     }
-
-    // MARK: - SPKI hash (SHA-256, Base64)
 
     static func sha256SPKIBase64Hash(for publicKey: SecKey) -> String? {
         guard let spkiData = spkiData(for: publicKey) else { return nil }
@@ -102,7 +99,6 @@ public final class PublicKeyHashTrustEvaluator: ServerTrustEvaluating {
         hash.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // ASN.1 headers for Subject Public Key Info (SPKI) — matches OpenSSL `openssl x509 -pubkey` pinning.
     private static let rsa2048ASN1Header: [UInt8] = [
         0x30, 0x82, 0x01, 0x22, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86,
         0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00, 0x03, 0x82, 0x01, 0x0f, 0x00

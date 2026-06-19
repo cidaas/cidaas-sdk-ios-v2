@@ -6,17 +6,11 @@
 import Alamofire
 import Foundation
 
-/// Hardcoded SHA-256 SPKI public key hashes (Base64). Replace placeholders before production use.
-///
-/// Generate hashes from a certificate, e.g.:
-/// `openssl s_client -connect api.example.com:443 </dev/null 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64`
+// Optional SDK defaults. Apps should pass hashes via Cidaas.setPublicKeyPinning(trustedPublicKeyHashes:).
 public enum CidaasPublicKeyPinningConfiguration {
-    /// Primary server public key — SHA-256(SPKI), Base64.
     public static let primaryPublicKeySHA256Base64 = "REPLACE_WITH_PRIMARY_PUBLIC_KEY_SHA256_BASE64"
-    /// Backup / failover certificate public key — SHA-256(SPKI), Base64.
     public static let backupPublicKeySHA256Base64 = "REPLACE_WITH_BACKUP_PUBLIC_KEY_SHA256_BASE64"
 
-    /// Default trusted hashes (primary + backup), excluding unreplaced placeholders.
     public static var defaultTrustedHashes: [String] {
         [primaryPublicKeySHA256Base64, backupPublicKeySHA256Base64].filter {
             !$0.isEmpty && !$0.hasPrefix("REPLACE_WITH_")
@@ -24,11 +18,8 @@ public enum CidaasPublicKeyPinningConfiguration {
     }
 }
 
-/// Configuration for TLS public-key hash pinning on Alamofire ``Session`` traffic.
 public struct CidaasPublicKeyPinningOptions {
-    /// SHA-256 SPKI hashes (Base64) of trusted server public keys.
     public let trustedPublicKeyHashes: [String]
-    /// Host names only (e.g. `api.example.com`), not full URLs.
     public let pinnedHosts: [String]
     public var validateHost: Bool
     public var performDefaultValidation: Bool
@@ -45,7 +36,6 @@ public struct CidaasPublicKeyPinningOptions {
         self.performDefaultValidation = performDefaultValidation
     }
 
-    /// Uses ``CidaasPublicKeyPinningConfiguration/defaultTrustedHashes``.
     public init(
         pinnedHosts: [String],
         validateHost: Bool = true,
@@ -61,8 +51,6 @@ public struct CidaasPublicKeyPinningOptions {
 }
 
 public enum CidaasPublicKeyPinningLoader {
-
-    /// Host from `DomainURL` in the SDK property file, if configured.
     public static func hostFromDomainURL(_ domainURL: String) -> String? {
         let trimmed = domainURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let url = URL(string: trimmed), let host = url.host, !host.isEmpty else {
