@@ -564,25 +564,55 @@ public class VerificationInteractor {
     }
     
     public func askForTouchorFaceIdForEnroll(incomingData: EnrollRequest, callback: @escaping (Result<EnrollResponse>) -> Void) {
-        // ask for touch id or face id
+        // ask for touch id or face id with attestation
         let touchId = TouchID()
         touchId.checkIfTouchIdAvailable { (success, errorMessage, errorCode) in
             if success == true {
-                touchId.checkTouchIDMatching(localizedReason: incomingData.localizedReason, callback: { (res_success, res_errorMessage, res_errorCode) in
-                    if res_success == true {
-                        self.enroll(verificationType: VerificationTypes.TOUCH.rawValue, incomingData: incomingData, callback: callback)
+                // Get properties to construct URL for attestation
+                guard let savedProp = self.getProperties(),
+                      let baseURL = savedProp["DomainURL"] else {
+                    let error = WebAuthError.shared.serviceFailureException(
+                        errorCode: 417,
+                        errorMessage: "properties cannot be empty",
+                        statusCode: 417
+                    )
+                    self.sharedPresenter.enroll(enrollResponse: nil, errorResponse: error, callback: callback)
+                    return
+                }
+                
+                let enrollURL = baseURL + VerificationURLHelper.shared.getEnrolledURL(verificationType: VerificationTypes.TOUCH.rawValue)
+                
+                if #available(iOS 14.0, *) {
+                    // Generate biometric proof JWT with attestation
+                    BiometricProofSigner.createProofJWT(
+                        httpMethod: "POST",
+                        requestURL: enrollURL,
+                        localizedReason: incomingData.localizedReason
+                    ) { result in
+                        switch result {
+                        case .success(jwt: let attestationJWT):
+                            incomingData.attestation = attestationJWT
+                            self.enroll(verificationType: VerificationTypes.TOUCH.rawValue, incomingData: incomingData, callback: callback)
+                        case .failure(error: let proofError):
+                            let error = WebAuthError.shared
+                            error.errorMessage = proofError.localizedDescription
+                            error.errorCode = WebAuthErrorCode.TOUCHID_DEFAULT_ERROR.rawValue
+                            self.sharedPresenter.enroll(enrollResponse: nil, errorResponse: error, callback: callback)
+                        }
                     }
-                    else {
-                        // send response to presenter
-                        let error = WebAuthError.shared
-                        error.errorMessage = res_errorMessage ?? WebAuthError.shared.errorMessage
-                        error.errorCode = res_errorCode ?? WebAuthError.shared.errorCode
-                        
-                        self.sharedPresenter.enroll(enrollResponse: nil, errorResponse: error, callback: callback)
-                        
-                        return
-                    }
-                })
+                } else {
+                    // Fallback for iOS < 14: use regular biometric check without attestation
+                    touchId.checkTouchIDMatching(localizedReason: incomingData.localizedReason, callback: { (res_success, res_errorMessage, res_errorCode) in
+                        if res_success == true {
+                            self.enroll(verificationType: VerificationTypes.TOUCH.rawValue, incomingData: incomingData, callback: callback)
+                        } else {
+                            let error = WebAuthError.shared
+                            error.errorMessage = res_errorMessage ?? WebAuthError.shared.errorMessage
+                            error.errorCode = res_errorCode ?? WebAuthError.shared.errorCode
+                            self.sharedPresenter.enroll(enrollResponse: nil, errorResponse: error, callback: callback)
+                        }
+                    })
+                }
             }
             else {
                 // send response to presenter
@@ -597,25 +627,55 @@ public class VerificationInteractor {
     }
     
     public func askForTouchorFaceIdForAuthenticate(incomingData: AuthenticateRequest, callback: @escaping (Result<AuthenticateResponse>) -> Void) {
-        // ask for touch id or face id
+        // ask for touch id or face id with attestation
         let touchId = TouchID()
         touchId.checkIfTouchIdAvailable { (success, errorMessage, errorCode) in
             if success == true {
-                touchId.checkTouchIDMatching(localizedReason: incomingData.localizedReason, callback: { (res_success, res_errorMessage, res_errorCode) in
-                    if res_success == true {
-                        self.authenticate(verificationType: VerificationTypes.TOUCH.rawValue, incomingData: incomingData, callback: callback)
+                // Get properties to construct URL for attestation
+                guard let savedProp = self.getProperties(),
+                      let baseURL = savedProp["DomainURL"] else {
+                    let error = WebAuthError.shared.serviceFailureException(
+                        errorCode: 417,
+                        errorMessage: "properties cannot be empty",
+                        statusCode: 417
+                    )
+                    self.sharedPresenter.authenticate(authenticateResponse: nil, errorResponse: error, callback: callback)
+                    return
+                }
+                
+                let authenticateURL = baseURL + VerificationURLHelper.shared.getAuthenticateURL(verificationType: VerificationTypes.TOUCH.rawValue)
+                
+                if #available(iOS 14.0, *) {
+                    // Generate biometric proof JWT with attestation
+                    BiometricProofSigner.createProofJWT(
+                        httpMethod: "POST",
+                        requestURL: authenticateURL,
+                        localizedReason: incomingData.localizedReason
+                    ) { result in
+                        switch result {
+                        case .success(jwt: let attestationJWT):
+                            incomingData.attestation = attestationJWT
+                            self.authenticate(verificationType: VerificationTypes.TOUCH.rawValue, incomingData: incomingData, callback: callback)
+                        case .failure(error: let proofError):
+                            let error = WebAuthError.shared
+                            error.errorMessage = proofError.localizedDescription
+                            error.errorCode = WebAuthErrorCode.TOUCHID_DEFAULT_ERROR.rawValue
+                            self.sharedPresenter.authenticate(authenticateResponse: nil, errorResponse: error, callback: callback)
+                        }
                     }
-                    else {
-                        // send response to presenter
-                        let error = WebAuthError.shared
-                        error.errorMessage = res_errorMessage ?? WebAuthError.shared.errorMessage
-                        error.errorCode = res_errorCode ?? WebAuthError.shared.errorCode
-                        
-                        self.sharedPresenter.authenticate(authenticateResponse: nil, errorResponse: error, callback: callback)
-                        
-                        return
-                    }
-                })
+                } else {
+                    // Fallback for iOS < 14: use regular biometric check without attestation
+                    touchId.checkTouchIDMatching(localizedReason: incomingData.localizedReason, callback: { (res_success, res_errorMessage, res_errorCode) in
+                        if res_success == true {
+                            self.authenticate(verificationType: VerificationTypes.TOUCH.rawValue, incomingData: incomingData, callback: callback)
+                        } else {
+                            let error = WebAuthError.shared
+                            error.errorMessage = res_errorMessage ?? WebAuthError.shared.errorMessage
+                            error.errorCode = res_errorCode ?? WebAuthError.shared.errorCode
+                            self.sharedPresenter.authenticate(authenticateResponse: nil, errorResponse: error, callback: callback)
+                        }
+                    })
+                }
             }
             else {
                 // send response to presenter
