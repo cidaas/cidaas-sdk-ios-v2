@@ -56,6 +56,50 @@ public class SessionManager {
         }
     }
 
+    private static func responseRefNumber(from response: HTTPURLResponse?) -> String? {
+        guard let response else { return nil }
+        for (key, value) in response.allHeaderFields {
+            guard let keyString = key as? String else { continue }
+            let normalized = keyString.lowercased().replacingOccurrences(of: "-", with: "_")
+            if normalized == "x_ref_number",
+               let ref = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !ref.isEmpty {
+                return ref
+            }
+        }
+        return nil
+    }
+
+    private static func truncatedBodyPreview(_ body: String?, limit: Int = 2000) -> String {
+        guard let body else { return "<empty>" }
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "<empty>" }
+        if trimmed.count <= limit { return trimmed }
+        return String(trimmed.prefix(limit)) + "…"
+    }
+
+    private static func logNetworkResponse(_ response: AFDataResponse<String>) {
+        guard DBHelper.shared.getEnableLog() else { return }
+        let url = response.request?.url?.absoluteString ?? "<unknown url>"
+        let status = response.response.map { String($0.statusCode) } ?? "—"
+        let refNumber = responseRefNumber(from: response.response)
+        if let refNumber {
+            logw("HTTP \(status) \(url) | x_ref_number=\(refNumber)", cname: "cidaas-sdk-network-log")
+        } else {
+            logw("HTTP \(status) \(url) | x_ref_number=<missing>", cname: "cidaas-sdk-network-log")
+        }
+        switch response.result {
+        case .success(let body):
+            logw("Response body: \(truncatedBodyPreview(body))", cname: "cidaas-sdk-network-log")
+        case .failure(let error):
+            logw("Response error: \(error.localizedDescription)", cname: "cidaas-sdk-network-log")
+            if let data = response.data, !data.isEmpty {
+                let body = String(decoding: data, as: UTF8.self)
+                logw("Response body: \(truncatedBodyPreview(body))", cname: "cidaas-sdk-network-log")
+            }
+        }
+    }
+
     private static func makeSession(
         headers: HTTPHeaders,
         pinningOptions: CidaasPublicKeyPinningOptions?
@@ -155,6 +199,7 @@ public class SessionManager {
     }
     
     func responseRedirect(response: AFDataResponse<String>, callback: @escaping (String?, WebAuthError?) -> Void) {
+        Self.logNetworkResponse(response)
         switch response.result {
         case .success(let value):
             if (response.response?.statusCode == 200) {
