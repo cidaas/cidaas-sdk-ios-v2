@@ -140,7 +140,8 @@ public class DBHelper : NSObject {
                 return
             }
             let storageKey = accessTokenKey(for: userId)
-            switch getTokenStorage() {
+            let storage = getTokenStorage()
+            switch storage {
             case .keychain:
                 let saved = KeychainWrapper.standard.set(access_token_string, forKey: storageKey)
                 guard saved else {
@@ -155,7 +156,7 @@ public class DBHelper : NSObject {
                 userDefaults.synchronize()
                 _ = KeychainWrapper.standard.removeObject(forKey: storageKey)
             }
-            logw("Saved access token for sub \(userId) in \(getTokenStorage().rawValue)", cname: "cidaas-sdk-info-log")
+            logw("Saved access token for sub \(userId) in \(storage.rawValue)", cname: "cidaas-sdk-info-log")
         }
         catch {
             logw("setAccessToken failed: \(error.localizedDescription)", cname: "cidaas-sdk-error-log")
@@ -208,7 +209,9 @@ public class DBHelper : NSObject {
     private func decodeAccessToken(_ access_token_string: String) -> AccessTokenModel {
         let decoder = JSONDecoder()
         do {
-            let data = access_token_string.data(using: .utf8)!
+            guard let data = access_token_string.data(using: .utf8) else {
+                return AccessTokenModel()
+            }
             return try decoder.decode(AccessTokenModel.self, from: data)
         }
         catch {
