@@ -64,13 +64,7 @@ public class LoginInteractor {
             return
         }
         
-        // get sub from accessToken
-        var sub: String?
-        
-        if let subject = TokenHelper.shared.getSubFromAccessToken(from: access_token) {
-            sub = subject
-            print("Subject (sub): \(sub)")
-        } else {
+        guard let sub = TokenHelper.shared.getSubFromAccessToken(from: access_token) else {
             let error = WebAuthError.shared.serviceFailureException(errorCode: 400, errorMessage: "not able to access sub from access_token", statusCode: 400)
             DispatchQueue.main.async {
                 callback(Result.failure(error: error))
@@ -81,8 +75,7 @@ public class LoginInteractor {
         // call worker
         self.sharedService.logout(access_token : access_token, properties: savedProp!) { response, error in
             if error == nil {
-                // remove user data if logout is success
-                UserDefaults.standard.removeObject(forKey: "cidaas_user_details_\(sub)")
+                DBHelper.shared.removeAccessToken(sub: sub)
             }
             self.sharedPresenter.logout(response: response, errorResponse: error, callback: callback)
             
@@ -117,8 +110,7 @@ public class LoginInteractor {
                 // call worker
                 self.sharedService.logout(access_token : result.data.access_token, properties: savedProp!) { response, error in
                     if error == nil {
-                        // remove user data if logout is success
-                        UserDefaults.standard.removeObject(forKey: "cidaas_user_details_\(sub)")
+                        DBHelper.shared.removeAccessToken(sub: sub)
                     }
                     self.sharedPresenter.logout(response: response, errorResponse: error, callback: callback)
                 }

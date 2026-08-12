@@ -59,6 +59,18 @@ public class Cidaas {
             DBHelper.shared.setEnablePkce(enablePkce: enablePkce)
         }
     }
+    
+    /// Where encrypted access / refresh tokens are persisted. Default is `userDefaults`.
+    /// Set to `.keychain` before login if the app should store tokens in the iOS Keychain.
+    public var TOKEN_STORAGE: CidaasTokenStorage {
+        get {
+            DBHelper.shared.getTokenStorage()
+        }
+        set {
+            DBHelper.shared.setTokenStorage(newValue)
+            logw("Token storage set to \(newValue.rawValue)", cname: "cidaas-sdk-info-log")
+        }
+    }
 
     // Pinning applies to SessionManager HTTP calls. Pass hashes from the app; host falls back to DomainURL.
     public func setPublicKeyPinning(

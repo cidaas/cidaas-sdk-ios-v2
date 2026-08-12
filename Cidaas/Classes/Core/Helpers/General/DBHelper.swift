@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import SwiftKeychainWrapper
 
 public class DBHelper : NSObject {
     
@@ -15,6 +16,24 @@ public class DBHelper : NSObject {
     
     // local variables
     public var userDefaults = UserDefaults.standard
+    
+    private func accessTokenKey(for userId: String) -> String {
+        return "cidaas_user_details_\(userId)"
+    }
+    
+    // token storage preference (default: UserDefaults)
+    public func setTokenStorage(_ storage: CidaasTokenStorage, key: String = "OAuthTokenStorage") {
+        userDefaults.set(storage.rawValue, forKey: key)
+        userDefaults.synchronize()
+    }
+    
+    public func getTokenStorage(key: String = "OAuthTokenStorage") -> CidaasTokenStorage {
+        guard let raw = userDefaults.string(forKey: key),
+              let storage = CidaasTokenStorage(rawValue: raw) else {
+            return .userDefaults
+        }
+        return storage
+    }
     
     // set enable log
     public func setEnableLog(enableLog : Bool, key : String = "OAuthEnableLog") {
@@ -105,33 +124,95 @@ public class DBHelper : NSObject {
         }
     }
     
-    // set access token
+    // set access token in the configured store (UserDefaults or Keychain)
     public func setAccessToken(accessTokenModel : AccessTokenModel) {
+        let userId = accessTokenModel.sub.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !userId.isEmpty else {
+            logw("setAccessToken skipped: sub is empty", cname: "cidaas-sdk-error-log")
+            return
+        }
+        
         let encoder = JSONEncoder()
         do {
-            let userId = accessTokenModel.sub
             let data = try encoder.encode(accessTokenModel)
-            let access_token_string = String(data : data, encoding : .utf8)
-            userDefaults.set(access_token_string, forKey: "cidaas_user_details_\(userId)")
-            userDefaults.synchronize()
+            guard let access_token_string = String(data : data, encoding : .utf8) else {
+                logw("setAccessToken failed: could not encode token JSON", cname: "cidaas-sdk-error-log")
+                return
+            }
+            let storageKey = accessTokenKey(for: userId)
+            let storage = getTokenStorage()
+            switch storage {
+            case .keychain:
+                let saved = KeychainWrapper.standard.set(access_token_string, forKey: storageKey)
+                guard saved else {
+                    logw("setAccessToken failed: Keychain write failed for sub \(userId)", cname: "cidaas-sdk-error-log")
+                    return
+                }
+                // Only drop the other store after a confirmed write.
+                userDefaults.removeObject(forKey: storageKey)
+                userDefaults.synchronize()
+            case .userDefaults:
+                userDefaults.set(access_token_string, forKey: storageKey)
+                userDefaults.synchronize()
+                _ = KeychainWrapper.standard.removeObject(forKey: storageKey)
+            }
+            logw("Saved access token for sub \(userId) in \(storage.rawValue)", cname: "cidaas-sdk-info-log")
         }
         catch {
-            userDefaults.synchronize()
+            logw("setAccessToken failed: \(error.localizedDescription)", cname: "cidaas-sdk-error-log")
         }
     }
     
-    // get access token
+    // get access token from the configured store, then the other store
     public func getAccessToken(key : String) -> AccessTokenModel {
-        let userId = key
-        guard let value = userDefaults.object(forKey: "cidaas_user_details_\(userId)") else {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
             return AccessTokenModel()
         }
-        let access_token_string = value as? String ?? ""
+        let storageKey = accessTokenKey(for: trimmed)
+        let preferred = getTokenStorage()
+        if let value = readAccessTokenString(for: storageKey, from: preferred) {
+            return decodeAccessToken(value)
+        }
+        let fallback: CidaasTokenStorage = (preferred == .keychain) ? .userDefaults : .keychain
+        if let value = readAccessTokenString(for: storageKey, from: fallback) {
+            return decodeAccessToken(value)
+        }
+        return AccessTokenModel()
+    }
+    
+    // remove access token from both stores (logout)
+    public func removeAccessToken(sub: String) {
+        let trimmed = sub.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let storageKey = accessTokenKey(for: trimmed)
+        userDefaults.removeObject(forKey: storageKey)
+        userDefaults.synchronize()
+        _ = KeychainWrapper.standard.removeObject(forKey: storageKey)
+    }
+    
+    private func readAccessTokenString(for storageKey: String, from storage: CidaasTokenStorage) -> String? {
+        switch storage {
+        case .keychain:
+            let value = KeychainWrapper.standard.string(forKey: storageKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return value.isEmpty ? nil : value
+        case .userDefaults:
+            guard let raw = userDefaults.object(forKey: storageKey) as? String else {
+                return nil
+            }
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+    }
+    
+    private func decodeAccessToken(_ access_token_string: String) -> AccessTokenModel {
         let decoder = JSONDecoder()
         do {
-            let data = access_token_string.data(using: .utf8)!
-            let accessTokenModel = try decoder.decode(AccessTokenModel.self, from: data)
-            return accessTokenModel
+            guard let data = access_token_string.data(using: .utf8) else {
+                return AccessTokenModel()
+            }
+            return try decoder.decode(AccessTokenModel.self, from: data)
         }
         catch {
             return AccessTokenModel()
