@@ -41,8 +41,7 @@ public class SafariAuthenticationSession<T> : AuthSession<T>, ASWebAuthenticatio
             }
             
             if T.self == Bool.self {
-                // clear user data on logout
-                UserDefaults.standard.removeObject(forKey: "cidaas_user_details_\(sub)")
+                DBHelper.shared.removeAccessToken(sub: sub)
                 CidaasHTTPProofToken.clearPersistedDpopBinding()
             }
             
