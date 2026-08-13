@@ -157,7 +157,7 @@ public class SessionManager {
             }
     }
 
-    /// Single place: when ``Cidaas/ENABLE_DPOP`` is on, attach a fresh `DPoP` proof for this request URL/method.
+    /// Single place: attach a fresh `DPoP` proof when ``Cidaas/ENABLE_DPOP`` is on or the session is DPoP-bound.
     private static func mergeDpopHeaderIfNeeded(
         into headers: inout HTTPHeaders,
         urlString: String,
@@ -165,15 +165,7 @@ public class SessionManager {
         extraheaders: [String: String] = [:]
     ) {
         guard #available(iOS 14.0, *) else { return }
-        guard CidaasHTTPProofToken.shouldSendDpopHeader(for: urlString) else {
-            if DBHelper.shared.getEnableLog() {
-                logw(
-                    "DPoP header skipped (ENABLE_DPOP=\(Cidaas.shared.ENABLE_DPOP)) for \(urlString)",
-                    cname: "cidaas-sdk-network-log"
-                )
-            }
-            return
-        }
+        guard CidaasHTTPProofToken.shouldSendDpopHeader(for: urlString) else { return }
         do {
             let dpopHeaders = try CidaasHTTPProof.dpopProofHeader(
                 urlString: urlString,

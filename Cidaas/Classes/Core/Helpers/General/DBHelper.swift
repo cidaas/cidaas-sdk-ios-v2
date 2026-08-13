@@ -68,7 +68,7 @@ public class DBHelper : NSObject {
         return ((userDefaults.object(forKey: key) ?? false) as? Bool) ?? false
     }
 
-    /// Global DPoP: when true, SessionManager sends a `DPoP` proof on every HTTP call.
+    /// Persists ``Cidaas/ENABLE_DPOP``. SessionManager also sends `DPoP` when a bound session is persisted.
     public func setEnableDpop(enableDpop: Bool, key: String = "OAuthEnableDpop") {
         userDefaults.set(enableDpop, forKey: key)
         userDefaults.synchronize()

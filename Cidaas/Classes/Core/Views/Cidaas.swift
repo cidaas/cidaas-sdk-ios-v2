@@ -61,8 +61,11 @@ public class Cidaas {
         }
     }
 
-    /// Global DPoP When `true` (iOS 14+): every `SessionManager` HTTP call gets a fresh `DPoP` proof header,
+    /// When `true` (iOS 14+): every `SessionManager` HTTP call gets a fresh `DPoP` proof header,
     /// and authz / `requestId` / browser authorize URLs include `dpop_jkt`.
+    /// Default is `false` — set at app start before login when the client requires DPoP.
+    /// If a DPoP-bound token was already saved, proofs are still sent on later calls even when this is `false`
+    /// (persisted binding fallback for refresh / upgrades).
     public var ENABLE_DPOP: Bool {
         get {
             enableDpop = DBHelper.shared.getEnableDpop()
@@ -71,9 +74,7 @@ public class Cidaas {
         set (enableDpop) {
             self.enableDpop = enableDpop
             DBHelper.shared.setEnableDpop(enableDpop: enableDpop)
-            if !enableDpop {
-                CidaasHTTPProofToken.clearPersistedDpopBinding()
-            }
+            // Do not clear persisted binding here — a cnf-bound session still needs `DPoP` on refresh.
             logw("ENABLE_DPOP=\(enableDpop)", cname: "cidaas-sdk-info-log")
         }
     }

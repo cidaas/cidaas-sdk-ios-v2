@@ -5,29 +5,34 @@
 
 import Foundation
 
-/// DPoP proof headers for SDK HTTP calls. Driven by global ``Cidaas/ENABLE_DPOP``.
+/// DPoP proof headers for SDK HTTP calls.
+/// Sending is driven by ``Cidaas/ENABLE_DPOP`` and/or a persisted DPoP-bound session.
 enum CidaasHTTPProofToken {
     private static let persistedBindingKey = "com.cidaas.sdk.dpop.bound"
 
-    /// Whether the SDK should send DPoP (global flag, iOS 14+).
+    /// Whether the global DPoP flag is on (iOS 14+).
     static var isEnabled: Bool {
         guard #available(iOS 14.0, *) else { return false }
         return Cidaas.shared.ENABLE_DPOP
     }
 
-    /// When ``Cidaas/ENABLE_DPOP`` is true, send a fresh `DPoP` proof on **every** API URL.
-    static func shouldSendDpopHeader(for urlString: String) -> Bool {
-        guard isEnabled else { return false }
-        return !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    /// Last saved access token was DPoP-bound (`token_type` / `cnf.jkt`).
+    /// Used so refresh (and other calls) still send `DPoP` if the session is bound
+    /// even when ``Cidaas/ENABLE_DPOP`` is temporarily off (e.g. upgrade / flag not set yet).
+    static var hasPersistedDpopBinding: Bool {
+        UserDefaults.standard.bool(forKey: persistedBindingKey)
     }
 
+    /// Send a fresh `DPoP` proof when the global flag is on **or** the current session is DPoP-bound.
+    static func shouldSendDpopHeader(for urlString: String) -> Bool {
+        guard #available(iOS 14.0, *) else { return false }
+        guard !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return isEnabled || hasPersistedDpopBinding
+    }
+
+    /// Remember whether the saved token is DPoP-bound so later refresh can still attach `DPoP`.
     static func persistDpopBindingIfNeeded(from entity: AccessTokenEntity) {
-        guard isEnabled else {
-            clearPersistedDpopBinding()
-            return
-        }
-        let bound = isDpopBound(entity)
-        UserDefaults.standard.set(bound, forKey: persistedBindingKey)
+        UserDefaults.standard.set(isDpopBound(entity), forKey: persistedBindingKey)
     }
 
     static func clearPersistedDpopBinding() {
