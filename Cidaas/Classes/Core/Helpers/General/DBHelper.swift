@@ -67,6 +67,16 @@ public class DBHelper : NSObject {
     public func getEnablePkce(key : String = "OAuthEnablePkce") -> Bool {
         return ((userDefaults.object(forKey: key) ?? false) as? Bool) ?? false
     }
+
+    /// Global DPoP: when true, SessionManager sends a `DPoP` proof on every HTTP call.
+    public func setEnableDpop(enableDpop: Bool, key: String = "OAuthEnableDpop") {
+        userDefaults.set(enableDpop, forKey: key)
+        userDefaults.synchronize()
+    }
+
+    public func getEnableDpop(key: String = "OAuthEnableDpop") -> Bool {
+        return ((userDefaults.object(forKey: key) ?? false) as? Bool) ?? false
+    }
     
     // set FCM token
     public func setFCM(fcmToken : String, key : String = "OAuthFCM") {

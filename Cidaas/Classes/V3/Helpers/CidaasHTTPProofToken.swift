@@ -5,58 +5,27 @@
 
 import Foundation
 
-/// Active DPoP flag for in-flight browser auth (code exchange) and persisted binding for refresh.
-enum CidaasDpopFlowContext {
-    private static let lock = NSLock()
-    private static var activeUseDpop = false
-
-    static var useDpopForActiveBrowserFlow: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return activeUseDpop
-    }
-
-    static func runWithUseDpop<T>(
-        _ enabled: Bool,
-        operation: (@escaping (Result<T>) -> Void) -> Void,
-        completion: @escaping (Result<T>) -> Void
-    ) {
-        lock.lock()
-        let previous = activeUseDpop
-        if enabled {
-            activeUseDpop = true
-        }
-        lock.unlock()
-
-        operation { result in
-            lock.lock()
-            activeUseDpop = previous
-            lock.unlock()
-            completion(result)
-        }
-    }
-}
-
-/// DPoP proof on `POST /token-srv/token` (code exchange and refresh). Uses the `DPoP` header, not `dpop_jkt`.
+/// DPoP proof headers for SDK HTTP calls. Driven by global ``Cidaas/ENABLE_DPOP``.
 enum CidaasHTTPProofToken {
     private static let persistedBindingKey = "com.cidaas.sdk.dpop.bound"
 
-    static func effectiveUseDpopForTokenEndpoint() -> Bool {
-        if CidaasDpopFlowContext.useDpopForActiveBrowserFlow { return true }
-        return UserDefaults.standard.bool(forKey: persistedBindingKey)
+    /// Whether the SDK should send DPoP (global flag, iOS 14+).
+    static var isEnabled: Bool {
+        guard #available(iOS 14.0, *) else { return false }
+        return Cidaas.shared.ENABLE_DPOP
     }
 
-    /// DPoP header applies only to `POST /token-srv/token` (code exchange and refresh).
+    /// When ``Cidaas/ENABLE_DPOP`` is true, send a fresh `DPoP` proof on **every** API URL.
     static func shouldSendDpopHeader(for urlString: String) -> Bool {
-        guard effectiveUseDpopForTokenEndpoint() else { return false }
-        if let url = URL(string: urlString) {
-            let path = url.path
-            return path == "/token-srv/token" || path.hasSuffix("/token-srv/token")
-        }
-        return urlString.contains("/token-srv/token")
+        guard isEnabled else { return false }
+        return !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     static func persistDpopBindingIfNeeded(from entity: AccessTokenEntity) {
+        guard isEnabled else {
+            clearPersistedDpopBinding()
+            return
+        }
         let bound = isDpopBound(entity)
         UserDefaults.standard.set(bound, forKey: persistedBindingKey)
     }

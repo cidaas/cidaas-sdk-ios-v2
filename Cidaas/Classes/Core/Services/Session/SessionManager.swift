@@ -134,16 +134,12 @@ public class SessionManager {
         }
         
         var requestHeaders = headers
-        if CidaasHTTPProofToken.shouldSendDpopHeader(for: url), #available(iOS 14.0, *) {
-            if let dpopHeaders = try? CidaasHTTPProof.dpopProofHeader(
-                urlString: url,
-                httpMethod: method.rawValue
-            ) {
-                for (key, value) in dpopHeaders where extraheaders[key] == nil {
-                    requestHeaders[key] = value
-                }
-            }
-        }
+        Self.mergeDpopHeaderIfNeeded(
+            into: &requestHeaders,
+            urlString: url,
+            httpMethod: method.rawValue,
+            extraheaders: extraheaders
+        )
         for (key, value) in extraheaders {
             requestHeaders[key] = value
         }
@@ -161,6 +157,63 @@ public class SessionManager {
             }
     }
 
+    /// Single place: when ``Cidaas/ENABLE_DPOP`` is on, attach a fresh `DPoP` proof for this request URL/method.
+    private static func mergeDpopHeaderIfNeeded(
+        into headers: inout HTTPHeaders,
+        urlString: String,
+        httpMethod: String,
+        extraheaders: [String: String] = [:]
+    ) {
+        guard #available(iOS 14.0, *) else { return }
+        guard CidaasHTTPProofToken.shouldSendDpopHeader(for: urlString) else {
+            if DBHelper.shared.getEnableLog() {
+                logw(
+                    "DPoP header skipped (ENABLE_DPOP=\(Cidaas.shared.ENABLE_DPOP)) for \(urlString)",
+                    cname: "cidaas-sdk-network-log"
+                )
+            }
+            return
+        }
+        do {
+            let dpopHeaders = try CidaasHTTPProof.dpopProofHeader(
+                urlString: urlString,
+                httpMethod: httpMethod
+            )
+            for (key, value) in dpopHeaders where extraheaders[key] == nil && headers.value(for: key) == nil {
+                headers[key] = value
+            }
+        } catch {
+            logw(
+                "DPoP proof failed for \(httpMethod) \(urlString): \(error.localizedDescription)",
+                cname: "cidaas-sdk-error-log"
+            )
+        }
+    }
+
+    private static func applyDpopHeaderIfNeeded(to urlRequest: inout URLRequest) {
+        guard #available(iOS 14.0, *),
+              let urlString = urlRequest.url?.absoluteString
+        else { return }
+        guard CidaasHTTPProofToken.shouldSendDpopHeader(for: urlString) else { return }
+        let method = (urlRequest.httpMethod ?? "POST").uppercased()
+        do {
+            let dpopHeaders = try CidaasHTTPProof.dpopProofHeader(
+                urlString: urlString,
+                httpMethod: method
+            )
+            for (key, value) in dpopHeaders {
+                if urlRequest.value(forHTTPHeaderField: key) == nil {
+                    urlRequest.setValue(value, forHTTPHeaderField: key)
+                }
+            }
+        } catch {
+            logw(
+                "DPoP proof failed for \(method) \(urlString): \(error.localizedDescription)",
+                cname: "cidaas-sdk-error-log"
+            )
+        }
+    }
+
     func uploadPhoto(url: URLRequest, parameters: [String: String], photo: UIImage, callback: @escaping (String?, WebAuthError?) -> Void) {
         guard let uploadImage = photo.jpegData(compressionQuality: 0.8) else {
             callback(nil, WebAuthError.shared.serviceFailureException(
@@ -171,6 +224,7 @@ public class SessionManager {
             return
         }
         var urlReq: URLRequest = url
+        Self.applyDpopHeaderIfNeeded(to: &urlReq)
         session.upload(multipartFormData: { multipartFormData in
             for (key, value) in parameters {
                 guard let data = value.data(using: .utf8) else { continue }
@@ -186,6 +240,7 @@ public class SessionManager {
     
     func uploadAudio(url: URLRequest, parameters: [String: String], voice: Data, callback: @escaping (String?, WebAuthError?) -> Void) {
         var urlReq: URLRequest = url
+        Self.applyDpopHeaderIfNeeded(to: &urlReq)
         session.upload(multipartFormData: { multipartFormData in
             for (key, value) in parameters {
                 multipartFormData.append(value.data(using: .utf8)!, withName: key)
