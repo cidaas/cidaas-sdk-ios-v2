@@ -136,10 +136,44 @@ public final class CidaasWebAuthBuilder {
         )
     }
 
+    public func signOut(accessToken: String, completion: @escaping (Result<Bool>) -> Void) {
+        guard let viewController = delegateViewController else {
+            let error = WebAuthError.shared.propertyMissingException()
+            error.errorMessage = Self.missingDelegateMessage
+            DispatchQueue.main.async {
+                completion(.failure(error: error))
+            }
+            return
+        }
+        let trimmedToken = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedToken.isEmpty else {
+            let error = WebAuthError.shared.propertyMissingException()
+            error.errorMessage = "signOut(accessToken:) requires a non-empty accessToken."
+            DispatchQueue.main.async {
+                completion(.failure(error: error))
+            }
+            return
+        }
+        BrowserAuthPerform.startLogout(
+            presentingFrom: viewController,
+            accessToken: trimmedToken,
+            completion: completion
+        )
+    }
+
     @available(iOS 13.0, *)
     public func signOut(sub: String) async throws -> Bool {
         try await withCheckedThrowingContinuation { continuation in
             signOut(sub: sub) { result in
+                continuation.resume(with: result.cidaasBoolToSwiftResult())
+            }
+        }
+    }
+
+    @available(iOS 13.0, *)
+    public func signOut(accessToken: String) async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            signOut(accessToken: accessToken) { result in
                 continuation.resume(with: result.cidaasBoolToSwiftResult())
             }
         }

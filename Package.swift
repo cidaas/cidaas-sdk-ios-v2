@@ -13,8 +13,7 @@ let package = Package(
         .package(url: "https://github.com/Alamofire/Alamofire.git", .upToNextMajor(from: "5.8.1")),
         .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", .upToNextMajor(from: "1.8.1")),
         .package(url: "https://github.com/jrendel/SwiftKeychainWrapper", .upToNextMajor(from: "4.0.1")),
-        .package(url: "https://github.com/Flight-School/AnyCodable", from: "0.6.0"),
-        .package(url: "https://github.com/auth0/JWTDecode.swift.git", from: "2.6.0")
+        .package(url: "https://github.com/Flight-School/AnyCodable", from: "0.6.0")
     ],
     targets: [
         .target(
@@ -23,8 +22,7 @@ let package = Package(
                 .product(name: "Alamofire", package: "Alamofire"),
                 .product(name: "CryptoSwift", package: "CryptoSwift"),
                 .product(name: "SwiftKeychainWrapper", package: "SwiftKeychainWrapper"),
-                .product(name: "AnyCodable", package: "AnyCodable"),
-                .product(name: "JWTDecode", package: "JWTDecode.swift")
+                .product(name: "AnyCodable", package: "AnyCodable")
             ],
             path: "Cidaas/Classes",
             swiftSettings: swiftSettings)

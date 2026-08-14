@@ -17,21 +17,9 @@ public class LogoutWithBrowserController: NSObject, SFSafariViewControllerDelega
     
     // logout with browser
     public func logoutWithBrowser(delegate: UIViewController, sub: String, properties: Dictionary<String, String>, callback: @escaping(Result<Bool>) -> Void) {
-        // null check
-        if properties["DomainURL"] == "" || properties["DomainURL"] == nil  {
-            let error = WebAuthError.shared.propertyMissingException()
-            // log error
-            let loggerMessage = "Read properties failure : " + "Error Code - " + String(describing: error.errorCode) + ", Error Message - " + error.errorMessage + ", Status Code - " + String(describing: error.statusCode)
-            logw(loggerMessage, cname: "cidaas-sdk-error-log")
-            
-            DispatchQueue.main.async {
-                callback(Result.failure(error: error))
-            }
-            return
-        }
+        guard validateDomain(properties: properties, callback: callback) else { return }
         
-        // check if sub is empty
-        if (sub.isEmpty) {
+        if sub.isEmpty {
             let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "sub cannot be empty", statusCode: 417)
             DispatchQueue.main.async {
                 callback(Result.failure(error: error))
@@ -39,73 +27,36 @@ public class LogoutWithBrowserController: NSObject, SFSafariViewControllerDelega
             return
         }
         
-        
         AccessTokenController.shared.getAccessToken(sub: sub) {
             switch $0 {
             case .success(result: let tokenResp):
-                var accessToken = tokenResp.data.access_token
-                
-                // check if accessToken is empty
-                if (accessToken.isEmpty) {
+                let accessToken = tokenResp.data.access_token
+                if accessToken.isEmpty {
                     let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "access_token cannot be empty", statusCode: 417)
                     DispatchQueue.main.async {
                         callback(Result.failure(error: error))
                     }
                     return
                 }
-                
-                // get PostLogoutRedirectURL from properties
-                let postLogoutRedirectURL = properties["PostLogoutRedirectURL"] ?? ""
-                
-                // get RedirectURL value from plist file
-                let redirectURL = properties["RedirectURL"] ?? ""
-                
-                var logoutUrl = self.generateLogoutURL(accessToken: accessToken,  postLogoutRedirectURL: postLogoutRedirectURL,properties: properties)
-                
-                
-                guard let logoutURL = URL(string: logoutUrl) else {
-                    let error = WebAuthError.shared.serviceFailureException(errorCode: 400, errorMessage: "Invalid Logout URL: \(logoutUrl)", statusCode: 400)
-                    DispatchQueue.main.async {
-                        callback(Result.failure(error: error))
-                    }
-                    return
-                }
-                
-                
-                let logoutSession = SafariAuthenticationSession<Bool>(urlValue: logoutURL, redirectURL: redirectURL, sub: sub, callback: callback)
-                
-                // save the session
-                self.storage.store(logoutSession)
-                
+                self.presentBrowserLogout(
+                    accessToken: accessToken,
+                    sub: sub,
+                    properties: properties,
+                    callback: callback
+                )
             case .failure(error: let error):
-                // return callback
                 DispatchQueue.main.async {
                     callback(Result.failure(error: error))
                 }
-                return
             }
         }
-        
     }
     
     // logout with browser
     public func logoutWithBrowser(delegate: UIViewController, accessToken: String, properties: Dictionary<String, String>, callback: @escaping(Result<Bool>) -> Void) {
-        // null check
-        if properties["DomainURL"] == "" || properties["DomainURL"] == nil  {
-            let error = WebAuthError.shared.propertyMissingException()
-            // log error
-            let loggerMessage = "Read properties failure : " + "Error Code - " + String(describing: error.errorCode) + ", Error Message - " + error.errorMessage + ", Status Code - " + String(describing: error.statusCode)
-            logw(loggerMessage, cname: "cidaas-sdk-error-log")
-            
-            DispatchQueue.main.async {
-                callback(Result.failure(error: error))
-            }
-            return
-        }
+        guard validateDomain(properties: properties, callback: callback) else { return }
         
-        
-        // check if accessToken is empty
-        if (accessToken.isEmpty) {
+        if accessToken.isEmpty {
             let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "access_token cannot be empty", statusCode: 417)
             DispatchQueue.main.async {
                 callback(Result.failure(error: error))
@@ -113,12 +64,7 @@ public class LogoutWithBrowserController: NSObject, SFSafariViewControllerDelega
             return
         }
         
-        var sub: String
-        
-        if let subject = TokenHelper.shared.getSubFromAccessToken(from: accessToken) {
-            sub = subject
-            print("Subject (sub): \(sub)")
-        } else {
+        guard let sub = TokenHelper.shared.getSubFromAccessToken(from: accessToken), !sub.isEmpty else {
             let error = WebAuthError.shared.serviceFailureException(errorCode: 400, errorMessage: "not able to access sub from access_token", statusCode: 400)
             DispatchQueue.main.async {
                 callback(Result.failure(error: error))
@@ -126,18 +72,48 @@ public class LogoutWithBrowserController: NSObject, SFSafariViewControllerDelega
             return
         }
         
-        
-        
-        // get PostLogoutRedirectURL value from plist file
+        logw("Browser logout resolved sub: \(sub)", cname: "cidaas-sdk-info-log")
+        presentBrowserLogout(
+            accessToken: accessToken,
+            sub: sub,
+            properties: properties,
+            callback: callback
+        )
+    }
+    
+    private func validateDomain(properties: Dictionary<String, String>, callback: @escaping(Result<Bool>) -> Void) -> Bool {
+        if properties["DomainURL"] == "" || properties["DomainURL"] == nil {
+            let error = WebAuthError.shared.propertyMissingException()
+            let loggerMessage = "Read properties failure : " + "Error Code - " + String(describing: error.errorCode) + ", Error Message - " + error.errorMessage + ", Status Code - " + String(describing: error.statusCode)
+            logw(loggerMessage, cname: "cidaas-sdk-error-log")
+            DispatchQueue.main.async {
+                callback(Result.failure(error: error))
+            }
+            return false
+        }
+        return true
+    }
+    
+    private func presentBrowserLogout(
+        accessToken: String,
+        sub: String,
+        properties: Dictionary<String, String>,
+        callback: @escaping(Result<Bool>) -> Void
+    ) {
         let postLogoutRedirectURL = properties["PostLogoutRedirectURL"] ?? ""
-        
-        // get RedirectURL value from plist file
         let redirectURL = properties["RedirectURL"] ?? ""
+        // ASWebAuthenticationSession must match the scheme that end_session redirects to.
+        let callbackRedirectURL = !postLogoutRedirectURL.isEmpty ? postLogoutRedirectURL : redirectURL
         
-        var logoutUrl = self.generateLogoutURL(accessToken: accessToken, postLogoutRedirectURL: postLogoutRedirectURL, properties: properties)
+        let logoutUrl = generateLogoutURL(
+            accessToken: accessToken,
+            postLogoutRedirectURL: postLogoutRedirectURL,
+            properties: properties
+        )
         
+        logw("Browser logout URL: \(logoutUrl)", cname: "cidaas-sdk-network-log")
         
-        guard let logoutURL = URL(string: logoutUrl) else {
+        guard !logoutUrl.isEmpty, let logoutURL = URL(string: logoutUrl) else {
             let error = WebAuthError.shared.serviceFailureException(errorCode: 400, errorMessage: "Invalid Logout URL: \(logoutUrl)", statusCode: 400)
             DispatchQueue.main.async {
                 callback(Result.failure(error: error))
@@ -145,26 +121,33 @@ public class LogoutWithBrowserController: NSObject, SFSafariViewControllerDelega
             return
         }
         
-        
-        let logoutSession = SafariAuthenticationSession<Bool>(urlValue: logoutURL, redirectURL: redirectURL, sub: sub, callback: callback)
-        
-        // save the session
-        self.storage.store(logoutSession)
+        let logoutSession = SafariAuthenticationSession<Bool>(
+            urlValue: logoutURL,
+            redirectURL: callbackRedirectURL,
+            sub: sub,
+            callback: callback
+        )
+        storage.store(logoutSession)
     }
     
-    public func generateLogoutURL(accessToken: String,  postLogoutRedirectURL: String,properties: Dictionary<String, String>) -> String {
-        var components = URLComponents()
-        var domainURL = properties["DomainURL"] ?? ""
-        var logoutURL = ""
+    public func generateLogoutURL(accessToken: String, postLogoutRedirectURL: String, properties: Dictionary<String, String>) -> String {
+        guard !accessToken.isEmpty else { return "" }
         
-        if (!accessToken.isEmpty) {
-            if (!postLogoutRedirectURL.isEmpty) {
-                logoutURL = domainURL + LoginURLHelper.shared.getLogout(accessToken: accessToken) + "&post_logout_redirect_uri=" + postLogoutRedirectURL
-            } else {
-                logoutURL = domainURL + LoginURLHelper.shared.getLogout(accessToken: accessToken)
-            }
+        var domainURL = properties["DomainURL"] ?? ""
+        while domainURL.hasSuffix("/") {
+            domainURL = String(domainURL.dropLast())
+        }
+        guard !domainURL.isEmpty else { return "" }
+        
+        guard var components = URLComponents(string: domainURL + LoginURLHelper.shared.logoutURL) else {
+            return ""
         }
         
-        return logoutURL
+        var queryItems = [URLQueryItem(name: "access_token_hint", value: accessToken)]
+        if !postLogoutRedirectURL.isEmpty {
+            queryItems.append(URLQueryItem(name: "post_logout_redirect_uri", value: postLogoutRedirectURL))
+        }
+        components.queryItems = queryItems
+        return components.url?.absoluteString ?? ""
     }
 }

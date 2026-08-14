@@ -179,8 +179,7 @@ open class Log {
 
 ///a free function to make writing to the log much nicer
 public func logw(_ text: String,cname:String?=nil) {
-    print (text)
-    if (DBHelper.shared.getEnableLog() == true) {
-        Log.logger.write(text,cname: cname)
-    }
+    guard DBHelper.shared.getEnableLog() == true else { return }
+    print(text)
+    Log.logger.write(text,cname: cname)
 }

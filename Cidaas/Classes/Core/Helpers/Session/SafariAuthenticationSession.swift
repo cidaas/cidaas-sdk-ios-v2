@@ -32,6 +32,10 @@ public class SafariAuthenticationSession<T> : AuthSession<T>, ASWebAuthenticatio
         self.authSession = ASWebAuthenticationSession(url: self.urlValue, callbackURLScheme:shortRedirectURL,
         completionHandler: { (resultURL, resultError) in
             guard resultError == nil, let callbackURL = resultURL else {
+                // Avoid treating the next login redirect as a logout success.
+                if T.self == Bool.self {
+                    Cidaas.shared.browserLogoutCallback = nil
+                }
                 if case SFAuthenticationError.canceledLogin = resultError! {
                     callback(Result.failure(error: WebAuthError.shared.userCancelledException()))
                 } else {
