@@ -158,6 +158,7 @@ public class SessionManager {
     }
 
     /// Single place: attach a fresh `DPoP` proof when ``Cidaas/ENABLE_DPOP`` is on or the session is DPoP-bound.
+    /// Includes RFC 9449 `ath` when an access token is present on the request (never on bare `/token` calls).
     private static func mergeDpopHeaderIfNeeded(
         into headers: inout HTTPHeaders,
         urlString: String,
@@ -167,9 +168,11 @@ public class SessionManager {
         guard #available(iOS 14.0, *) else { return }
         guard CidaasHTTPProofToken.shouldSendDpopHeader(for: urlString) else { return }
         do {
+            let accessToken = accessTokenForDpopAth(extraheaders: extraheaders, headers: headers)
             let dpopHeaders = try CidaasHTTPProof.dpopProofHeader(
                 urlString: urlString,
-                httpMethod: httpMethod
+                httpMethod: httpMethod,
+                accessToken: accessToken
             )
             for (key, value) in dpopHeaders where extraheaders[key] == nil && headers.value(for: key) == nil {
                 headers[key] = value
@@ -189,9 +192,11 @@ public class SessionManager {
         guard CidaasHTTPProofToken.shouldSendDpopHeader(for: urlString) else { return }
         let method = (urlRequest.httpMethod ?? "POST").uppercased()
         do {
+            let accessToken = accessTokenForDpopAth(from: urlRequest)
             let dpopHeaders = try CidaasHTTPProof.dpopProofHeader(
                 urlString: urlString,
-                httpMethod: method
+                httpMethod: method,
+                accessToken: accessToken
             )
             for (key, value) in dpopHeaders {
                 if urlRequest.value(forHTTPHeaderField: key) == nil {
@@ -204,6 +209,53 @@ public class SessionManager {
                 cname: "cidaas-sdk-error-log"
             )
         }
+    }
+
+    /// Raw access token for `ath` when this request presents one (resource APIs).
+    private static func accessTokenForDpopAth(
+        extraheaders: [String: String],
+        headers: HTTPHeaders
+    ) -> String? {
+        if let token = rawAccessToken(fromHeaderValues: extraheaders) {
+            return token
+        }
+        var values: [String: String] = [:]
+        for header in headers {
+            values[header.name] = header.value
+        }
+        return rawAccessToken(fromHeaderValues: values)
+    }
+
+    private static func accessTokenForDpopAth(from urlRequest: URLRequest) -> String? {
+        guard let all = urlRequest.allHTTPHeaderFields else { return nil }
+        return rawAccessToken(fromHeaderValues: all)
+    }
+
+    private static func rawAccessToken(fromHeaderValues values: [String: String]) -> String? {
+        for (key, value) in values {
+            let normalized = key.lowercased()
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if normalized == "access_token" {
+                return trimmed
+            }
+            if normalized == "authorization" {
+                return stripAuthorizationScheme(trimmed)
+            }
+        }
+        return nil
+    }
+
+    private static func stripAuthorizationScheme(_ value: String) -> String? {
+        let lower = value.lowercased()
+        for prefix in ["dpop ", "bearer "] {
+            if lower.hasPrefix(prefix) {
+                let token = String(value.dropFirst(prefix.count))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return token.isEmpty ? nil : token
+            }
+        }
+        return value
     }
 
     func uploadPhoto(url: URLRequest, parameters: [String: String], photo: UIImage, callback: @escaping (String?, WebAuthError?) -> Void) {
