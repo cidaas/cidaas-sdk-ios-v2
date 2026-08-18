@@ -136,6 +136,23 @@ enum BrowserAuthPerform {
         }
     }
 
+    static func startLogout(
+        presentingFrom viewController: UIViewController,
+        accessToken: String,
+        completion: @escaping (Result<Bool>) -> Void
+    ) {
+        withPropertyFile(completion: completion) { props in
+            Cidaas.shared.browserCallback = nil
+            Cidaas.shared.browserLogoutCallback = completion
+            LogoutWithBrowserController.shared.logoutWithBrowser(
+                delegate: viewController,
+                accessToken: accessToken,
+                properties: props,
+                callback: completion
+            )
+        }
+    }
+
     static func authorizationURL(
         for flow: BrowserAuthFlow,
         extraParameters: [String: String],

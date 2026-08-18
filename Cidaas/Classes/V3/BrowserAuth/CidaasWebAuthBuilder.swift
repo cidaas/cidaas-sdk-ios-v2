@@ -25,26 +25,19 @@ public final class CidaasWebAuthBuilder {
 
     private var sessionKind: WebAuthSessionKind = .login
     private var storedExtraParameters: [String: String] = [:]
-    private var dpopOption = CidaasDpopBuilderOption()
     private weak var delegateViewController: UIViewController?
 
     public init(delegate: UIViewController) {
         delegateViewController = delegate
     }
 
-    /// Enables DPoP for browser auth: `dpop_jkt` on the authorization URL / ``requestId``, and a `DPoP` proof header on `POST /token-srv/token` (code exchange and refresh) (iOS 14+).
-    @discardableResult
-    public func useDpop(_ enabled: Bool = true) -> Self {
-        dpopOption.setUseDpop(enabled)
-        return self
-    }
-
-    /// Fetches an OAuth `request_id` (e.g. before ``social(provider:requestId:)``). Includes `dpop_jkt` when ``useDpop()`` is enabled (iOS 14+).
+    /// Fetches an OAuth `request_id` (e.g. before ``social(provider:requestId:)``).
+    /// Includes `dpop_jkt` when ``Cidaas/ENABLE_DPOP`` is on (iOS 14+).
     public func requestId(
         extraParams: [String: String] = [:],
         completion: @escaping (Result<RequestIdResponseEntity>) -> Void
     ) {
-        let params = CidaasHTTPProofAuthz.mergingDpopJKT(into: extraParams, useDpop: dpopOption.useDpop)
+        let params = CidaasHTTPProofAuthz.mergingDpopJKT(into: extraParams)
         AuthzInteractor.shared.getRequestId(extraParams: params, callback: completion)
     }
 
@@ -78,37 +71,35 @@ public final class CidaasWebAuthBuilder {
             }
             return
         }
-        CidaasDpopFlowContext.runWithUseDpop(dpopOption.useDpop, operation: { wrapped in
-            switch sessionKind {
-            case .login:
-                BrowserAuthPerform.startLogin(
-                    presentingFrom: viewController,
-                    extraParameters: storedExtraParameters,
-                    completion: wrapped
-                )
-            case .registration:
-                BrowserAuthPerform.startRegistration(
-                    presentingFrom: viewController,
-                    extraParameters: storedExtraParameters,
-                    completion: wrapped
-                )
-            case .social(let provider, let requestId):
-                guard !provider.isEmpty, !requestId.isEmpty else {
-                    let error = WebAuthError.shared.propertyMissingException()
-                    error.errorMessage = "social(provider:requestId:) requires non-empty values"
-                    DispatchQueue.main.async {
-                        wrapped(.failure(error: error))
-                    }
-                    return
+        switch sessionKind {
+        case .login:
+            BrowserAuthPerform.startLogin(
+                presentingFrom: viewController,
+                extraParameters: storedExtraParameters,
+                completion: completion
+            )
+        case .registration:
+            BrowserAuthPerform.startRegistration(
+                presentingFrom: viewController,
+                extraParameters: storedExtraParameters,
+                completion: completion
+            )
+        case .social(let provider, let requestId):
+            guard !provider.isEmpty, !requestId.isEmpty else {
+                let error = WebAuthError.shared.propertyMissingException()
+                error.errorMessage = "social(provider:requestId:) requires non-empty values"
+                DispatchQueue.main.async {
+                    completion(.failure(error: error))
                 }
-                BrowserAuthPerform.startSocialLogin(
-                    provider: provider,
-                    requestId: requestId,
-                    presentingFrom: viewController,
-                    completion: wrapped
-                )
+                return
             }
-        }, completion: completion)
+            BrowserAuthPerform.startSocialLogin(
+                provider: provider,
+                requestId: requestId,
+                presentingFrom: viewController,
+                completion: completion
+            )
+        }
     }
 
     @available(iOS 13.0, *)
@@ -145,10 +136,44 @@ public final class CidaasWebAuthBuilder {
         )
     }
 
+    public func signOut(accessToken: String, completion: @escaping (Result<Bool>) -> Void) {
+        guard let viewController = delegateViewController else {
+            let error = WebAuthError.shared.propertyMissingException()
+            error.errorMessage = Self.missingDelegateMessage
+            DispatchQueue.main.async {
+                completion(.failure(error: error))
+            }
+            return
+        }
+        let trimmedToken = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedToken.isEmpty else {
+            let error = WebAuthError.shared.propertyMissingException()
+            error.errorMessage = "signOut(accessToken:) requires a non-empty accessToken."
+            DispatchQueue.main.async {
+                completion(.failure(error: error))
+            }
+            return
+        }
+        BrowserAuthPerform.startLogout(
+            presentingFrom: viewController,
+            accessToken: trimmedToken,
+            completion: completion
+        )
+    }
+
     @available(iOS 13.0, *)
     public func signOut(sub: String) async throws -> Bool {
         try await withCheckedThrowingContinuation { continuation in
             signOut(sub: sub) { result in
+                continuation.resume(with: result.cidaasBoolToSwiftResult())
+            }
+        }
+    }
+
+    @available(iOS 13.0, *)
+    public func signOut(accessToken: String) async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            signOut(accessToken: accessToken) { result in
                 continuation.resume(with: result.cidaasBoolToSwiftResult())
             }
         }

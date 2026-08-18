@@ -24,6 +24,7 @@ public class Cidaas {
     var fcmToken : String = ""
     var enableLog : Bool = false
     var enablePkce : Bool = true
+    var enableDpop : Bool = false
     var deviceInfo : DeviceInfoModel
     var storage: TransactionStore
     var timer = Timer()
@@ -57,6 +58,24 @@ public class Cidaas {
             self.enablePkce = enablePkce
             // save local
             DBHelper.shared.setEnablePkce(enablePkce: enablePkce)
+        }
+    }
+
+    /// When `true` (iOS 14+): every `SessionManager` HTTP call gets a fresh `DPoP` proof header,
+    /// and authz / `requestId` / browser authorize URLs include `dpop_jkt`.
+    /// Default is `false` — set at app start before login when the client requires DPoP.
+    /// If a DPoP-bound token was already saved, proofs are still sent on later calls even when this is `false`
+    /// (persisted binding fallback for refresh / upgrades).
+    public var ENABLE_DPOP: Bool {
+        get {
+            enableDpop = DBHelper.shared.getEnableDpop()
+            return enableDpop
+        }
+        set (enableDpop) {
+            self.enableDpop = enableDpop
+            DBHelper.shared.setEnableDpop(enableDpop: enableDpop)
+            // Do not clear persisted binding here — a cnf-bound session still needs `DPoP` on refresh.
+            logw("ENABLE_DPOP=\(enableDpop)", cname: "cidaas-sdk-info-log")
         }
     }
     
@@ -139,6 +158,9 @@ public class Cidaas {
         
         // set enable log in local
         self.ENABLE_LOG = false
+
+        // ENABLE_DPOP is not reset here — apps set `Cidaas.shared.ENABLE_DPOP = true` at start.
+        // Forcing false in init would wipe the flag if any code path re-touched shared state.
         
         // read property from file
         self.readPropertyFile()

@@ -19,21 +19,13 @@ extension Cidaas {
 
 public final class CidaasPublicBuilder {
 
-    private var dpopOption = CidaasDpopBuilderOption()
-
-    /// Enables DPoP: `dpop_jkt` on ``requestId`` (iOS 14+).
-    @discardableResult
-    public func useDpop(_ enabled: Bool = true) -> Self {
-        dpopOption.setUseDpop(enabled)
-        return self
-    }
-
-    /// Fetches an OAuth `request_id` from authz-srv (`POST /authz-srv/authrequest/authz/generate`). Includes `dpop_jkt` when ``useDpop()`` is enabled (iOS 14+).
+    /// Fetches an OAuth `request_id` from authz-srv (`POST /authz-srv/authrequest/authz/generate`).
+    /// Includes `dpop_jkt` when ``Cidaas/ENABLE_DPOP`` is on (iOS 14+).
     public func requestId(
         extraParams: [String: String] = [:],
         completion: @escaping (Result<RequestIdResponseEntity>) -> Void
     ) {
-        let params = CidaasHTTPProofAuthz.mergingDpopJKT(into: extraParams, useDpop: dpopOption.useDpop)
+        let params = CidaasHTTPProofAuthz.mergingDpopJKT(into: extraParams)
         AuthzInteractor.shared.getRequestId(extraParams: params) { result in
             CidaasV3Callback.deliver(result, to: completion)
         }

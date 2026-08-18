@@ -37,15 +37,6 @@ public struct CidaasNativeRegistrationResult {
 
 public final class CidaasNativeRegistrationBuilder {
 
-    private var dpopOption = CidaasDpopBuilderOption()
-
-    /// Includes `dpop_jkt` on the OAuth `request_id` call when enabled (iOS 14+).
-    @discardableResult
-    public func useDpop(_ enabled: Bool = true) -> Self {
-        dpopOption.setUseDpop(enabled)
-        return self
-    }
-
     /// Tenant registration field metadata for building a native signup form.
     public func registrationFields(
         acceptLanguage: String = "en-us",
@@ -150,7 +141,6 @@ public final class CidaasNativeRegistrationBuilder {
         completion: @escaping (Result<String>) -> Void
     ) {
         Cidaas.shared.publicAPI()
-            .useDpop(dpopOption.useDpop)
             .requestId(extraParams: extraParams) { result in
                 switch result {
                 case .failure(let error):

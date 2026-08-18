@@ -87,8 +87,14 @@ enum CidaasHTTPProof {
         return try? jwkThumbprintSHA256(privateKey: key)
     }
 
-    /// `DPoP` proof JWT header for `POST /token-srv/token`.
-    static func dpopProofHeader(urlString: String, httpMethod: String) throws -> [String: String] {
+    /// `DPoP` proof JWT header.
+    /// - Parameter accessToken: When presenting an access token (resource APIs), include RFC 9449 `ath`.
+    ///   Omit for `/token-srv/token` (token endpoint must not send `ath`).
+    static func dpopProofHeader(
+        urlString: String,
+        httpMethod: String,
+        accessToken: String? = nil
+    ) throws -> [String: String] {
         guard let url = URL(string: urlString) else {
             throw NSError(
                 domain: "CidaasHTTPProof",
@@ -97,7 +103,13 @@ enum CidaasHTTPProof {
             )
         }
         let privateKey = try SigningKey.loadOrCreate(tag: KeychainTag.dpop, secureEnclave: false)
-        return ["DPoP": try dpopProofJWT(httpMethod: httpMethod, httpURL: url, privateKey: privateKey)]
+        let proof = try dpopProofJWT(
+            httpMethod: httpMethod,
+            httpURL: url,
+            privateKey: privateKey,
+            accessToken: accessToken
+        )
+        return ["DPoP": proof]
     }
 
     // MARK: - Signing keys
@@ -172,6 +184,8 @@ enum CidaasHTTPProof {
         let htu: String
         let iat: Int
         let jti: String
+        /// RFC 9449 access-token hash; only when presenting an access token to a resource server.
+        let ath: String?
     }
 
     // MARK: - Attestation JWT
@@ -210,13 +224,20 @@ enum CidaasHTTPProof {
     private static func dpopProofJWT(
         httpMethod: String,
         httpURL: URL,
-        privateKey: SecKey
+        privateKey: SecKey,
+        accessToken: String? = nil
     ) throws -> String {
+        let trimmedToken = accessToken?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ath: String? = {
+            guard let trimmedToken, !trimmedToken.isEmpty else { return nil }
+            return accessTokenHash(trimmedToken)
+        }()
         let claims = DPoPProofClaims(
             htm: httpMethod.uppercased(),
             htu: canonicalHTU(httpURL),
             iat: Int(Date().timeIntervalSince1970.rounded(.down)),
-            jti: UUID().uuidString.lowercased()
+            jti: UUID().uuidString.lowercased(),
+            ath: ath
         )
         return try signProofJWT(typ: "dpop+jwt", privateKey: privateKey, claims: claims)
     }
@@ -329,6 +350,12 @@ enum CidaasHTTPProof {
         components?.fragment = nil
         components?.query = nil
         return components?.url?.absoluteString ?? url.absoluteString
+    }
+
+    /// RFC 9449 `ath` = base64url(SHA-256(access_token)) using the raw token string.
+    private static func accessTokenHash(_ accessToken: String) -> String {
+        let digest = Data(SHA256.hash(data: Data(accessToken.utf8)))
+        return base64URL(digest)
     }
 
     private static func base64URL(_ data: Data) -> String {

@@ -5,60 +5,34 @@
 
 import Foundation
 
-/// Active DPoP flag for in-flight browser auth (code exchange) and persisted binding for refresh.
-enum CidaasDpopFlowContext {
-    private static let lock = NSLock()
-    private static var activeUseDpop = false
-
-    static var useDpopForActiveBrowserFlow: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return activeUseDpop
-    }
-
-    static func runWithUseDpop<T>(
-        _ enabled: Bool,
-        operation: (@escaping (Result<T>) -> Void) -> Void,
-        completion: @escaping (Result<T>) -> Void
-    ) {
-        lock.lock()
-        let previous = activeUseDpop
-        if enabled {
-            activeUseDpop = true
-        }
-        lock.unlock()
-
-        operation { result in
-            lock.lock()
-            activeUseDpop = previous
-            lock.unlock()
-            completion(result)
-        }
-    }
-}
-
-/// DPoP proof on `POST /token-srv/token` (code exchange and refresh). Uses the `DPoP` header, not `dpop_jkt`.
+/// DPoP proof headers for SDK HTTP calls.
+/// Sending is driven by ``Cidaas/ENABLE_DPOP`` and/or a persisted DPoP-bound session.
 enum CidaasHTTPProofToken {
     private static let persistedBindingKey = "com.cidaas.sdk.dpop.bound"
 
-    static func effectiveUseDpopForTokenEndpoint() -> Bool {
-        if CidaasDpopFlowContext.useDpopForActiveBrowserFlow { return true }
-        return UserDefaults.standard.bool(forKey: persistedBindingKey)
+    /// Whether the global DPoP flag is on (iOS 14+).
+    static var isEnabled: Bool {
+        guard #available(iOS 14.0, *) else { return false }
+        return Cidaas.shared.ENABLE_DPOP
     }
 
-    /// DPoP header applies only to `POST /token-srv/token` (code exchange and refresh).
+    /// Last saved access token was DPoP-bound (`token_type` / `cnf.jkt`).
+    /// Used so refresh (and other calls) still send `DPoP` if the session is bound
+    /// even when ``Cidaas/ENABLE_DPOP`` is temporarily off (e.g. upgrade / flag not set yet).
+    static var hasPersistedDpopBinding: Bool {
+        UserDefaults.standard.bool(forKey: persistedBindingKey)
+    }
+
+    /// Send a fresh `DPoP` proof when the global flag is on **or** the current session is DPoP-bound.
     static func shouldSendDpopHeader(for urlString: String) -> Bool {
-        guard effectiveUseDpopForTokenEndpoint() else { return false }
-        if let url = URL(string: urlString) {
-            let path = url.path
-            return path == "/token-srv/token" || path.hasSuffix("/token-srv/token")
-        }
-        return urlString.contains("/token-srv/token")
+        guard #available(iOS 14.0, *) else { return false }
+        guard !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        return isEnabled || hasPersistedDpopBinding
     }
 
+    /// Remember whether the saved token is DPoP-bound so later refresh can still attach `DPoP`.
     static func persistDpopBindingIfNeeded(from entity: AccessTokenEntity) {
-        let bound = isDpopBound(entity)
-        UserDefaults.standard.set(bound, forKey: persistedBindingKey)
+        UserDefaults.standard.set(isDpopBound(entity), forKey: persistedBindingKey)
     }
 
     static func clearPersistedDpopBinding() {
