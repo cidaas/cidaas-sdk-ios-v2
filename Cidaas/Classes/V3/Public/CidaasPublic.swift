@@ -19,8 +19,7 @@ extension Cidaas {
 
 public final class CidaasPublicBuilder {
 
-    /// Fetches an OAuth `request_id` from authz-srv (`POST /authz-srv/authrequest/authz/generate`).
-    /// Includes `dpop_jkt` when ``Cidaas/ENABLE_DPOP`` is on (iOS 14+).
+    /// OAuth `request_id` (registers device if needed, sends `cidaas_dr` Cookie). Adds `dpop_jkt` when DPoP is on.
     public func requestId(
         extraParams: [String: String] = [:],
         completion: @escaping (Result<RequestIdResponseEntity>) -> Void

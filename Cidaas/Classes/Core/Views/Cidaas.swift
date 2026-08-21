@@ -78,6 +78,9 @@ public class Cidaas {
             logw("ENABLE_DPOP=\(enableDpop)", cname: "cidaas-sdk-info-log")
         }
     }
+
+    /// In-memory only — resets on app restart so the next `requestId` re-checks with the server.
+    public var isDeviceRegistrationCompleted: Bool = false
     
     /// Where encrypted access / refresh tokens are persisted. Default is `userDefaults`.
     /// Set to `.keychain` before login if the app should store tokens in the iOS Keychain.
