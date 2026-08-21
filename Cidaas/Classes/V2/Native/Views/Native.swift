@@ -48,6 +48,10 @@ public class CidaasNative {
     public func loginWithCredentials(incomingData : LoginEntity, callback: @escaping(Result<LoginResponseEntity>) -> Void) {
         sharedLoginViewController.loginWithCredentials(incomingData: incomingData, callback: callback)
     }
+
+    public func loginAfterRegister(trackId: String, callback: @escaping (Result<LoginResponseEntity>) -> Void) {
+        sharedLoginViewController.loginAfterRegister(trackId: trackId, callback: callback)
+    }
     
     // logout service
     public func logout(sub : String, callback: @escaping(Result<Bool>) -> Void){

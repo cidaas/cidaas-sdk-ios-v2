@@ -13,9 +13,14 @@ public class LoginURLHelper {
     public var logoutURL = "/session/end_session"
     
     public var loginWithCredentialsURL = "/login-srv/login/sdk"
+    public var loginAfterRegisterURL = "/login-srv/login/handle/afterregister"
     
     public func getLoginWithCredentialsURL() -> String {
         return loginWithCredentialsURL
+    }
+
+    public func getLoginAfterRegisterURL(trackId: String) -> String {
+        return loginAfterRegisterURL + "/" + trackId
     }
     
     public func getLogout(accessToken : String) -> String {

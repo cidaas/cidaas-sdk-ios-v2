@@ -44,6 +44,25 @@ public class LoginInteractor {
             self.sharedPresenter.loginWithCredentials(response: response, errorResponse: error, callback: callback)
         }
     }
+
+    public func loginAfterRegister(trackId: String, callback: @escaping (Result<LoginResponseEntity>) -> Void) {
+        let trimmed = trackId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "trackId cannot be empty", statusCode: 417)
+            sharedPresenter.loginAfterRegister(response: nil, errorResponse: error, callback: callback)
+            return
+        }
+
+        guard let savedProp = getProperties() else {
+            let error = WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: "properties cannot be empty", statusCode: 417)
+            sharedPresenter.loginAfterRegister(response: nil, errorResponse: error, callback: callback)
+            return
+        }
+
+        sharedService.loginAfterRegister(trackId: trimmed, properties: savedProp) { response, error in
+            self.sharedPresenter.loginAfterRegister(response: response, errorResponse: error, callback: callback)
+        }
+    }
     
     public func logout(access_token : String, callback: @escaping(Result<Bool>) -> Void){
         // get saved properties
