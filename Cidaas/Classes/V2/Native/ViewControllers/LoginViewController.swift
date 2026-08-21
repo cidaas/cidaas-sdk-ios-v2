@@ -20,4 +20,8 @@ public class LoginViewController {
     public func loginWithCredentials(incomingData : LoginEntity, callback: @escaping(Result<LoginResponseEntity>) -> Void) {
         sharedInteractor.loginWithCredentials(incomingData: incomingData, callback: callback)
     }
+
+    public func loginAfterRegister(trackId: String, callback: @escaping (Result<LoginResponseEntity>) -> Void) {
+        sharedInteractor.loginAfterRegister(trackId: trackId, callback: callback)
+    }
 }
