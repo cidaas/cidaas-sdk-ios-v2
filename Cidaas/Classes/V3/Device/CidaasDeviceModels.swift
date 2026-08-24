@@ -5,13 +5,13 @@
 
 import Foundation
 
-/// Attestation provider from the device registration initiate response.
+/// Attestation provider from the device registration initiate response (verification options).
 public enum DeviceRegistrationProvider: Equatable {
     /// Apple App Attest.
     case apple
     /// Firebase App Check.
     case firebase
-    /// No provider configured for this platform; platform attestation is skipped.
+    /// Empty initiate `provider`; verification options have no AppAttest.
     case none
     case unknown(String)
 

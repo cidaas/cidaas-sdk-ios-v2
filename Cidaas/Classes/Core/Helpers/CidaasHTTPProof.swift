@@ -35,7 +35,7 @@ enum CidaasHTTPProof {
             self.dpopPrivateKey = dpopPrivateKey
         }
 
-        /// Builds the verify `dpop+jwt`. `rawAttestation` may be empty when platform attestation is omitted.
+        /// Builds the verify `dpop+jwt`. Empty `rawAttestation` is only accepted by the backend when AppAttest is unset.
         func attestationJWT(
             rawAttestation: String,
             verificationURLString: String,

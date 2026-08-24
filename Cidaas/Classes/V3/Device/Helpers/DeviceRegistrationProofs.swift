@@ -12,7 +12,7 @@ enum DeviceRegistrationProofs {
         let bodyParams: [String: Any]
     }
 
-    /// Builds the verify request body, including a `dpop+jwt` attestation (platform token may be empty).
+    /// Builds the verify request body with a `dpop+jwt` (platform attestation claim follows backend requirements).
     static func prepareVerificationRequest(
         verificationURLString: String,
         sessionId: String,

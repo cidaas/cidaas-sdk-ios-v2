@@ -14,7 +14,7 @@ extension Cidaas {
 }
 
 /// Registers the current device via initiate → verify, returning a bound `device_id`.
-/// Set `includePlatformAttestation` to `true` to send `push_id` and run App Attest / Firebase App Check when the tenant provides a `provider`.
+/// Platform attestation requirements come from verification options (initiate `provider`); the SDK follows that response.
 public final class CidaasDevice {
 
     /// Host-app hook that returns a Firebase App Check token when initiate `provider` is `firebase`.
@@ -44,12 +44,13 @@ public final class CidaasDevice {
         return err
     }
 
-    /// Runs device registration. When `includePlatformAttestation` is `false` (default), omits `push_id` and skips platform attestation.
+    /// Runs device registration. Align `includePlatformAttestation` with client verification options (initiate `provider`).
     ///
     /// - Parameters:
     ///   - clientId: OAuth client id.
     ///   - pushId: FCM token; required when `includePlatformAttestation` is `true`.
-    ///   - includePlatformAttestation: When `true`, includes `push_id` and collects App Attest / App Check per initiate `provider`.
+    ///   - includePlatformAttestation: When `true`, sends `push_id` and collects App Attest / App Check for the initiate `provider`.
+    ///     Use `false` only when verification options have no AppAttest for this platform (`provider` empty).
     ///   - completion: Registered `device_id`, or an error.
     @available(iOS 14.0, *)
     public func registerDevice(
@@ -133,7 +134,7 @@ public final class CidaasDevice {
             }
             DBHelper.shared.setFCM(fcmToken: trimmedPushId)
         } else if !trimmedPushId.isEmpty {
-            // Cache locally only; not included on initiate when platform attestation is disabled.
+            // Cache locally only; omitted from initiate when includePlatformAttestation is false.
             DBHelper.shared.setFCM(fcmToken: trimmedPushId)
         }
 
@@ -161,7 +162,7 @@ public final class CidaasDevice {
             "device_id": deviceId,
             "platform": "ios"
         ]
-        // Include push_id only when platform attestation is enabled.
+        // push_id is sent only when the host opts into the platform-attestation path.
         if includePlatformAttestation {
             bodyParams["push_id"] = trimmedPushId
         }
