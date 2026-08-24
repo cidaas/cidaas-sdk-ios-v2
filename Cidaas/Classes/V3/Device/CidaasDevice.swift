@@ -279,13 +279,21 @@ public final class CidaasDevice {
                     case .firebase:
                         attestation = try await DeviceRegistrationFirebaseAppCheck.fetchAttestationToken()
                         keyId = "firebase"
-                    case .none:
-                        attestation = ""
-                        keyId = ""
                     case .unknown(let value):
                         let err = WebAuthError.shared.serviceFailureException(
                             errorCode: 400,
                             errorMessage: "Unsupported device registration provider: \(value)",
+                            statusCode: 400
+                        )
+                        DispatchQueue.main.async {
+                            completion(.failure(error: err))
+                        }
+                        return
+                    case .none:
+                        assertionFailure("Unexpected .none provider while collecting platform attestation")
+                        let err = WebAuthError.shared.serviceFailureException(
+                            errorCode: 400,
+                            errorMessage: "Unexpected empty device registration provider while collecting platform attestation.",
                             statusCode: 400
                         )
                         DispatchQueue.main.async {
