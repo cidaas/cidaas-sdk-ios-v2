@@ -5,10 +5,14 @@
 
 import Foundation
 
-/// Attestation provider returned by the device registration initiate API.
+/// Attestation provider from the device registration initiate response.
 public enum DeviceRegistrationProvider: Equatable {
+    /// Apple App Attest.
     case apple
+    /// Firebase App Check.
     case firebase
+    /// No provider configured for this platform; platform attestation is skipped.
+    case none
     case unknown(String)
 
     init(apiValue: String?) {
@@ -19,14 +23,14 @@ public enum DeviceRegistrationProvider: Equatable {
         case "firebase":
             self = .firebase
         case "":
-            self = .apple
+            self = .none
         default:
             self = .unknown(normalized)
         }
     }
 }
 
-/// Session and nonce returned from the initiate step (used internally between steps).
+/// Challenge material returned by initiate and consumed by verify.
 public struct DeviceRegistrationInitiateResult {
     public let sessionId: String
     public let nonce: String
@@ -39,7 +43,7 @@ public struct DeviceRegistrationInitiateResult {
     }
 }
 
-/// JSON envelope for the initiate API response.
+/// Initiate API response envelope.
 final class DeviceRegistrationInitiateAPIResponse: Codable {
     var success: Bool = false
     var status: Int32 = 0
@@ -52,14 +56,14 @@ final class DeviceRegistrationInitiateAPIResponse: Codable {
     }
 }
 
-/// `data` object from the initiate response.
+/// Initiate API `data` payload.
 struct DeviceRegistrationInitiateDataResponse: Codable {
     let session_id: String
     let nonce: String
     let provider: String?
 }
 
-/// Registered device id returned to the app on success.
+/// Successful registration result.
 public struct DeviceRegistrationVerifyResult {
     public let deviceId: String
 
@@ -68,7 +72,7 @@ public struct DeviceRegistrationVerifyResult {
     }
 }
 
-/// JSON envelope for the verify API response.
+/// Verify API response envelope.
 final class DeviceRegistrationVerifyAPIResponse: Codable {
     var success: Bool = false
     var status: Int32 = 0
@@ -81,7 +85,7 @@ final class DeviceRegistrationVerifyAPIResponse: Codable {
     }
 }
 
-/// `data` object from the verify response.
+/// Verify API `data` payload.
 struct DeviceRegistrationVerifyDataResponse: Codable {
     let device_id: String
 }

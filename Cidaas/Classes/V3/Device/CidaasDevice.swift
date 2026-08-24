@@ -4,21 +4,20 @@
 //
 
 import Foundation
-import Alamofire
 
 extension Cidaas {
 
-    /// Device registration (App Attest or Firebase App Check + DPoP-bound attestation JWT). iOS 14+.
+    /// Device registration entry point (iOS 14+).
     public func device() -> CidaasDevice {
         CidaasDevice()
     }
 }
 
-/// Registers this iOS device using App Attest or Firebase App Check (per initiate `provider`).
-/// Verify sends a `dpop+jwt` in `attestation` (platform attestation + biometric public key DER in the payload).
+/// Registers the current device via initiate → verify, returning a bound `device_id`.
+/// Set `includePlatformAttestation` to `true` to send `push_id` and run App Attest / Firebase App Check when the tenant provides a `provider`.
 public final class CidaasDevice {
 
-    /// Optional hook to supply a Firebase App Check JWT when `provider` is `firebase`.
+    /// Host-app hook that returns a Firebase App Check token when initiate `provider` is `firebase`.
     public static var firebaseAppCheckTokenProvider: (@Sendable () async throws -> String)? {
         get {
             if #available(iOS 14.0, *) {
@@ -45,17 +44,28 @@ public final class CidaasDevice {
         return err
     }
 
-    /// Full flow: request session + nonce, then attest the app and complete registration.
+    /// Runs device registration. When `includePlatformAttestation` is `false` (default), omits `push_id` and skips platform attestation.
+    ///
+    /// - Parameters:
+    ///   - clientId: OAuth client id.
+    ///   - pushId: FCM token; required when `includePlatformAttestation` is `true`.
+    ///   - includePlatformAttestation: When `true`, includes `push_id` and collects App Attest / App Check per initiate `provider`.
+    ///   - completion: Registered `device_id`, or an error.
     @available(iOS 14.0, *)
     public func registerDevice(
         clientId: String,
-        pushId: String,
+        pushId: String = "",
+        includePlatformAttestation: Bool = false,
         completion: @escaping (Result<DeviceRegistrationVerifyResult>) -> Void
     ) {
-        startRegistration(clientId: clientId, pushId: pushId) { initiateResult in
+        startRegistration(
+            clientId: clientId,
+            pushId: pushId,
+            includePlatformAttestation: includePlatformAttestation
+        ) { initiateResult in
             switch initiateResult {
             case .failure(error: let error):
-                // Backend returns HTTP 409 on /initiation when the device is already registered.
+                // HTTP 409 on initiate means the device is already registered.
                 if let alreadyRegistered = self.alreadyRegisteredResult(responseString: nil, error: error) {
                     self.persistDeviceId(alreadyRegistered.deviceId)
                     completion(.success(result: alreadyRegistered))
@@ -63,16 +73,28 @@ public final class CidaasDevice {
                     completion(.failure(error: error))
                 }
             case .success(result: let initiate):
-                self.completeRegistration(initiateResult: initiate, completion: completion)
+                self.completeRegistration(
+                    initiateResult: initiate,
+                    includePlatformAttestation: includePlatformAttestation,
+                    completion: completion
+                )
             }
         }
     }
 
     /// Async convenience over the completion-based `registerDevice`.
     @available(iOS 14.0, *)
-    public func registerDevice(clientId: String, pushId: String) async throws -> DeviceRegistrationVerifyResult {
+    public func registerDevice(
+        clientId: String,
+        pushId: String = "",
+        includePlatformAttestation: Bool = false
+    ) async throws -> DeviceRegistrationVerifyResult {
         try await withCheckedThrowingContinuation { continuation in
-            registerDevice(clientId: clientId, pushId: pushId) { result in
+            registerDevice(
+                clientId: clientId,
+                pushId: pushId,
+                includePlatformAttestation: includePlatformAttestation
+            ) { result in
                 switch result {
                 case .success(result: let value):
                     continuation.resume(returning: value)
@@ -86,6 +108,7 @@ public final class CidaasDevice {
     private func startRegistration(
         clientId: String,
         pushId: String,
+        includePlatformAttestation: Bool,
         completion: @escaping (Result<DeviceRegistrationInitiateResult>) -> Void
     ) {
         let trimmedClientId = clientId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -99,16 +122,20 @@ public final class CidaasDevice {
         }
 
         let trimmedPushId = pushId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPushId.isEmpty else {
-            let err = WebAuthError.shared.propertyMissingException()
-            err.errorMessage = "push_id (FCM) is required for device registration."
-            DispatchQueue.main.async {
-                completion(.failure(error: err))
+        if includePlatformAttestation {
+            guard !trimmedPushId.isEmpty else {
+                let err = WebAuthError.shared.propertyMissingException()
+                err.errorMessage = "push_id (FCM) is required when includePlatformAttestation is true."
+                DispatchQueue.main.async {
+                    completion(.failure(error: err))
+                }
+                return
             }
-            return
+            DBHelper.shared.setFCM(fcmToken: trimmedPushId)
+        } else if !trimmedPushId.isEmpty {
+            // Cache locally only; not included on initiate when platform attestation is disabled.
+            DBHelper.shared.setFCM(fcmToken: trimmedPushId)
         }
-
-        DBHelper.shared.setFCM(fcmToken: trimmedPushId)
 
         let deviceId = SDKDeviceIdResolver.resolve().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !deviceId.isEmpty else {
@@ -129,12 +156,15 @@ public final class CidaasDevice {
         }
 
         let urlString = baseURL + VerificationURLHelper.shared.getDeviceRegistrationInitiationURL()
-        let bodyParams: [String: Any] = [
-            "push_id": trimmedPushId,
+        var bodyParams: [String: Any] = [
             "client_id": trimmedClientId,
             "device_id": deviceId,
             "platform": "ios"
         ]
+        // Include push_id only when platform attestation is enabled.
+        if includePlatformAttestation {
+            bodyParams["push_id"] = trimmedPushId
+        }
 
         SessionManager.shared.startSession(url: urlString, method: .post, parameters: bodyParams) { responseString, error in
             if let error {
@@ -187,6 +217,7 @@ public final class CidaasDevice {
     @available(iOS 14.0, *)
     private func completeRegistration(
         initiateResult: DeviceRegistrationInitiateResult,
+        includePlatformAttestation: Bool,
         completion: @escaping (Result<DeviceRegistrationVerifyResult>) -> Void
     ) {
         let sessionId = initiateResult.sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -224,35 +255,47 @@ public final class CidaasDevice {
                 let attestation: String
                 let keyId: String
 
-                switch initiateResult.provider {
-                case .apple:
-                    guard DeviceRegistrationAppAttest.isSupported else {
-                        let err = appAttestUnavailableError()
+                let shouldCollectPlatformAttestation =
+                    includePlatformAttestation && initiateResult.provider != .none
+
+                if shouldCollectPlatformAttestation {
+                    switch initiateResult.provider {
+                    case .apple:
+                        guard DeviceRegistrationAppAttest.isSupported else {
+                            let err = appAttestUnavailableError()
+                            DispatchQueue.main.async {
+                                completion(.failure(error: err))
+                            }
+                            return
+                        }
+                        let appAttestKeyId = try await DeviceRegistrationAppAttest.generateKeyId()
+                        let attestationObject = try await DeviceRegistrationAppAttest.attest(
+                            keyId: appAttestKeyId,
+                            challengeB64FromServer: nonce
+                        )
+                        attestation = attestationObject.base64EncodedString()
+                        keyId = try DeviceRegistrationChallengeB64.standardBase64KeyId(fromAppleKeyId: appAttestKeyId)
+                    case .firebase:
+                        attestation = try await DeviceRegistrationFirebaseAppCheck.fetchAttestationToken()
+                        keyId = "firebase"
+                    case .none:
+                        attestation = ""
+                        keyId = ""
+                    case .unknown(let value):
+                        let err = WebAuthError.shared.serviceFailureException(
+                            errorCode: 400,
+                            errorMessage: "Unsupported device registration provider: \(value)",
+                            statusCode: 400
+                        )
                         DispatchQueue.main.async {
                             completion(.failure(error: err))
                         }
                         return
                     }
-                    let appAttestKeyId = try await DeviceRegistrationAppAttest.generateKeyId()
-                    let attestationObject = try await DeviceRegistrationAppAttest.attest(
-                        keyId: appAttestKeyId,
-                        challengeB64FromServer: nonce
-                    )
-                    attestation = attestationObject.base64EncodedString()
-                    keyId = try DeviceRegistrationChallengeB64.standardBase64KeyId(fromAppleKeyId: appAttestKeyId)
-                case .firebase:
-                    attestation = try await DeviceRegistrationFirebaseAppCheck.fetchAttestationToken()
-                    keyId = "firebase"
-                case .unknown(let value):
-                    let err = WebAuthError.shared.serviceFailureException(
-                        errorCode: 400,
-                        errorMessage: "Unsupported device registration provider: \(value)",
-                        statusCode: 400
-                    )
-                    DispatchQueue.main.async {
-                        completion(.failure(error: err))
-                    }
-                    return
+                } else {
+                    // DPoP + biometric proof only (no App Attest / App Check token).
+                    attestation = ""
+                    keyId = ""
                 }
 
                 let prepared = try DeviceRegistrationProofs.prepareVerificationRequest(
@@ -356,7 +399,7 @@ public final class CidaasDevice {
         DBHelper.shared.setDeviceInfo(deviceInfo: info)
     }
 
-    /// HTTP 409 means the device is already registered — treat as success for the app flow.
+    /// Maps HTTP 409 (already registered) to a successful `device_id` result when possible.
     private func alreadyRegisteredResult(
         responseString: String?,
         error: WebAuthError?,

@@ -35,19 +35,13 @@ enum CidaasHTTPProof {
             self.dpopPrivateKey = dpopPrivateKey
         }
 
+        /// Builds the verify `dpop+jwt`. `rawAttestation` may be empty when platform attestation is omitted.
         func attestationJWT(
             rawAttestation: String,
             verificationURLString: String,
             httpMethod: String
         ) throws -> String {
             let attestation = rawAttestation.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !attestation.isEmpty else {
-                throw NSError(
-                    domain: "CidaasHTTPProof",
-                    code: 40,
-                    userInfo: [NSLocalizedDescriptionKey: "attestation is required"]
-                )
-            }
             guard let url = URL(string: verificationURLString) else {
                 throw NSError(
                     domain: "CidaasHTTPProof",
