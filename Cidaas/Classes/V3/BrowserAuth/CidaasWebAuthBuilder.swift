@@ -25,6 +25,7 @@ public final class CidaasWebAuthBuilder {
 
     private var sessionKind: WebAuthSessionKind = .login
     private var storedExtraParameters: [String: String] = [:]
+    private var useParEnabled = false
     private weak var delegateViewController: UIViewController?
 
     public init(delegate: UIViewController) {
@@ -43,6 +44,13 @@ public final class CidaasWebAuthBuilder {
     @discardableResult
     public func extraParameters(_ params: [String: String]) -> Self {
         storedExtraParameters = params
+        return self
+    }
+
+    /// PAR (RFC 9126): push params, then open authz with `request_uri`.
+    @discardableResult
+    public func usePar(_ enabled: Bool = true) -> Self {
+        useParEnabled = enabled
         return self
     }
 
@@ -75,12 +83,14 @@ public final class CidaasWebAuthBuilder {
             BrowserAuthPerform.startLogin(
                 presentingFrom: viewController,
                 extraParameters: storedExtraParameters,
+                usePar: useParEnabled,
                 completion: completion
             )
         case .registration:
             BrowserAuthPerform.startRegistration(
                 presentingFrom: viewController,
                 extraParameters: storedExtraParameters,
+                usePar: useParEnabled,
                 completion: completion
             )
         case .social(let provider, let requestId):

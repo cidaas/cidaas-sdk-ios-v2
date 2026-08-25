@@ -117,6 +117,7 @@ public class SessionManager {
         url: String,
         method: HTTPMethod,
         parameters: [String: Any]?,
+        encoding: ParameterEncoding = JSONEncoding.default,
         extraheaders: [String: String] = [String: String](),
         callback: @escaping (String?, WebAuthError?) -> Void
     ) {
@@ -143,6 +144,9 @@ public class SessionManager {
         for (key, value) in extraheaders {
             requestHeaders[key] = value
         }
+        if encoding is URLEncoding {
+            requestHeaders["Content-Type"] = "application/x-www-form-urlencoded"
+        }
         if let locale = bodyParams?["locale"] as? String {
             requestHeaders["Accept-Language"] = locale
         }
@@ -158,7 +162,7 @@ public class SessionManager {
             url,
             method: method,
             parameters: bodyParams,
-            encoding: JSONEncoding.default,
+            encoding: encoding,
             headers: requestHeaders
         ) { urlRequest in
             if hasManualCookie {
@@ -316,7 +320,7 @@ public class SessionManager {
         Self.logNetworkResponse(response)
         switch response.result {
         case .success(let value):
-            if (response.response?.statusCode == 200) {
+            if response.response?.statusCode == 200 || response.response?.statusCode == 201 {
                 callback(value, nil)
                 return
             }
