@@ -24,18 +24,29 @@ extension Cidaas {
         public static func authorizationURL(
             for flow: BrowserAuthFlow,
             extraParameters: [String: String] = [:],
+            usePar: Bool = false,
             completion: @escaping (Result<URL>) -> Void
         ) {
-            BrowserAuthPerform.authorizationURL(for: flow, extraParameters: extraParameters, completion: completion)
+            BrowserAuthPerform.authorizationURL(
+                for: flow,
+                extraParameters: extraParameters,
+                usePar: usePar,
+                completion: completion
+            )
         }
 
         @available(iOS 13.0, *)
         public static func authorizationURL(
             for flow: BrowserAuthFlow,
-            extraParameters: [String: String] = [:]
+            extraParameters: [String: String] = [:],
+            usePar: Bool = false
         ) async throws -> URL {
             try await withCheckedThrowingContinuation { continuation in
-                BrowserAuthPerform.authorizationURL(for: flow, extraParameters: extraParameters) { result in
+                BrowserAuthPerform.authorizationURL(
+                    for: flow,
+                    extraParameters: extraParameters,
+                    usePar: usePar
+                ) { result in
                     continuation.resume(with: result.cidaasURLToSwiftResult())
                 }
             }
@@ -68,17 +79,19 @@ enum BrowserAuthPerform {
     static func startLogin(
         presentingFrom viewController: UIViewController,
         extraParameters: [String: String],
+        usePar: Bool,
         completion: @escaping (Result<LoginResponseEntity>) -> Void
     ) {
         withPropertyFile(completion: completion) { props in
             var props = props
             props["ViewType"] = BrowserAuthFlow.login.rawValue
             Cidaas.shared.browserCallback = completion
-            LoginController.shared.loginWithBrowser(
-                delegate: viewController,
-                extraParams: extraParameters,
+            startBrowserLogin(
+                presentingFrom: viewController,
+                extraParameters: extraParameters,
                 properties: props,
-                callback: completion
+                usePar: usePar,
+                completion: completion
             )
         }
     }
@@ -86,18 +99,55 @@ enum BrowserAuthPerform {
     static func startRegistration(
         presentingFrom viewController: UIViewController,
         extraParameters: [String: String],
+        usePar: Bool,
         completion: @escaping (Result<LoginResponseEntity>) -> Void
     ) {
         withPropertyFile(completion: completion) { props in
             var props = props
             props["ViewType"] = BrowserAuthFlow.registration.rawValue
             Cidaas.shared.browserCallback = completion
+            startBrowserLogin(
+                presentingFrom: viewController,
+                extraParameters: extraParameters,
+                properties: props,
+                usePar: usePar,
+                completion: completion
+            )
+        }
+    }
+
+    private static func startBrowserLogin(
+        presentingFrom viewController: UIViewController,
+        extraParameters: [String: String],
+        properties: [String: String],
+        usePar: Bool,
+        completion: @escaping (Result<LoginResponseEntity>) -> Void
+    ) {
+        guard usePar else {
             LoginController.shared.loginWithBrowser(
                 delegate: viewController,
                 extraParams: extraParameters,
-                properties: props,
+                properties: properties,
                 callback: completion
             )
+            return
+        }
+
+        resolveParAuthorizationURL(
+            extraParameters: extraParameters,
+            properties: properties
+        ) { result in
+            switch result {
+            case .failure(let error):
+                completion(.failure(error: error))
+            case .success(let url):
+                LoginController.shared.loginWithBrowser(
+                    loginURL: url,
+                    delegate: viewController,
+                    properties: properties,
+                    callback: completion
+                )
+            }
         }
     }
 
@@ -156,6 +206,7 @@ enum BrowserAuthPerform {
     static func authorizationURL(
         for flow: BrowserAuthFlow,
         extraParameters: [String: String],
+        usePar: Bool,
         completion: @escaping (Result<URL>) -> Void
     ) {
         guard var props = DBHelper.shared.getPropertyFile() else {
@@ -188,8 +239,47 @@ enum BrowserAuthPerform {
             }
         case .login, .registration:
             props["ViewType"] = flow.rawValue
-            let url = LoginController.shared.constructURL(extraParams: extraParameters, properties: props)
-            DispatchQueue.main.async {
+            guard usePar else {
+                let url = LoginController.shared.constructURL(extraParams: extraParameters, properties: props)
+                DispatchQueue.main.async {
+                    completion(.success(result: url))
+                }
+                return
+            }
+            resolveParAuthorizationURL(
+                extraParameters: extraParameters,
+                properties: props,
+                completion: completion
+            )
+        }
+    }
+
+    private static func resolveParAuthorizationURL(
+        extraParameters: [String: String],
+        properties: [String: String],
+        completion: @escaping (Result<URL>) -> Void
+    ) {
+        let bodyParams = LoginController.shared.authorizationParameters(
+            extraParams: extraParameters,
+            properties: properties
+        )
+        ParServiceWorker.shared.pushAuthorizationRequest(
+            bodyParams: bodyParams,
+            properties: properties
+        ) { result in
+            switch result {
+            case .failure(let error):
+                completion(.failure(error: error))
+            case .success(let par):
+                guard let url = LoginController.shared.constructParAuthorizationURL(
+                    requestURI: par.request_uri,
+                    properties: properties
+                ) else {
+                    let error = WebAuthError.shared.propertyMissingException()
+                    error.errorMessage = "AuthorizationURL is missing or invalid"
+                    completion(.failure(error: error))
+                    return
+                }
                 completion(.success(result: url))
             }
         }
