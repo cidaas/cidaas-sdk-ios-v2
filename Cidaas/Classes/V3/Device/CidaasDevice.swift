@@ -69,9 +69,9 @@ public final class CidaasDevice {
             switch initiateResult {
             case .failure(error: let error):
                 // 409 on initiate = already registered
-                if error.statusCode == 409, let deviceId = self.resolvedRegisteredDeviceId() {
-                    self.persistDeviceId(deviceId)
-                    completion(.success(result: DeviceRegistrationVerifyResult(deviceId: deviceId)))
+                if let alreadyRegistered = self.alreadyRegisteredResult(error: error) {
+                    self.persistDeviceId(alreadyRegistered.deviceId)
+                    completion(.success(result: alreadyRegistered))
                 } else {
                     completion(.failure(error: error))
                 }
@@ -458,9 +458,11 @@ public final class CidaasDevice {
         Cidaas.shared.isDeviceRegistrationCompleted = true
     }
 
-    // 409 has no device_id in the body — use the local one.
-    private func resolvedRegisteredDeviceId() -> String? {
-        let id = SDKDeviceIdResolver.resolve()
-        return id.isEmpty ? nil : id
+    /// Maps HTTP 409 (already registered) to a successful local `device_id` when possible.
+    private func alreadyRegisteredResult(error: WebAuthError?) -> DeviceRegistrationVerifyResult? {
+        guard error?.statusCode == 409 else { return nil }
+        let resolved = SDKDeviceIdResolver.resolve()
+        guard !resolved.isEmpty else { return nil }
+        return DeviceRegistrationVerifyResult(deviceId: resolved)
     }
 }
