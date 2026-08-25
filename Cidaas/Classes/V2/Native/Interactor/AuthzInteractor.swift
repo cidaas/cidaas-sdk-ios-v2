@@ -110,12 +110,13 @@ public class AuthzInteractor {
         Cidaas.shared.device().registerDevice(
             clientId: clientId,
             includePlatformAttestation: false
-        ) { [weak self] result in
+        ) { result in
+            // Strong capture so waiters are always drained if this interactor is released mid-flight.
             switch result {
             case .failure(error: let error):
-                self?.finishDeviceRegistration(.failure(error: error))
+                self.finishDeviceRegistration(.failure(error: error))
             case .success(result: _):
-                self?.finishDeviceRegistration(.success(result: true))
+                self.finishDeviceRegistration(.success(result: true))
             }
         }
     }

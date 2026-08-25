@@ -26,9 +26,13 @@ enum SDKDeviceIdResolver {
             return stored
         }
 
-        let keychainId = normalize(KeychainWrapper.standard.string(forKey: keychainKey) ?? "")
+        let keychainRaw = KeychainWrapper.standard.string(forKey: keychainKey) ?? ""
+        let keychainId = normalize(keychainRaw)
         if !keychainId.isEmpty {
-            _ = KeychainWrapper.standard.set(keychainId, forKey: keychainKey)
+            // Only rewrite Keychain when normalization changed the stored value.
+            if keychainId != keychainRaw {
+                _ = KeychainWrapper.standard.set(keychainId, forKey: keychainKey)
+            }
             if persistToDBHelper {
                 info.deviceId = keychainId
                 DBHelper.shared.setDeviceInfo(deviceInfo: info)
