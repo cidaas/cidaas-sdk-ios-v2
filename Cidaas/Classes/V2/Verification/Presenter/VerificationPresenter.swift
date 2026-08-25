@@ -384,21 +384,26 @@ public class VerificationPresenter {
     fileprivate static func authorizationCode(from raw: String) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
-            guard let data = trimmed.data(using: .utf8),
-                  let resp = try? JSONDecoder().decode(AuthzCodeResponse.self, from: data) else {
+            guard let data = trimmed.data(using: .utf8) else { return nil }
+            do {
+                let resp = try JSONDecoder().decode(AuthzCodeResponse.self, from: data)
+                let code = resp.data.code.trimmingCharacters(in: .whitespacesAndNewlines)
+                return code.isEmpty ? nil : code
+            } catch {
+                logw(
+                    "Login continue JSON decode failed: \(error.localizedDescription)",
+                    cname: "cidaas-sdk-verification-error-log"
+                )
                 return nil
             }
-            let code = resp.data.code.trimmingCharacters(in: .whitespacesAndNewlines)
-            return code.isEmpty ? nil : code
         }
         if let url = URL(string: trimmed),
            let code = url.valueOf("code")?.trimmingCharacters(in: .whitespacesAndNewlines),
            !code.isEmpty {
             return code.removingPercentEncoding ?? code
         }
-        guard let regex = try? NSRegularExpression(pattern: #"[?&]code=([^&\s\"'<>]+)"#) else { return nil }
         let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
-        guard let match = regex.firstMatch(in: trimmed, range: range),
+        guard let match = authorizationCodeRegex.firstMatch(in: trimmed, range: range),
               let codeRange = Range(match.range(at: 1), in: trimmed) else {
             return nil
         }
@@ -406,6 +411,11 @@ public class VerificationPresenter {
         guard !code.isEmpty else { return nil }
         return code.removingPercentEncoding ?? code
     }
+
+    private static let authorizationCodeRegex: NSRegularExpression = {
+        // Pattern is fixed; force-try is safe for this constant.
+        try! NSRegularExpression(pattern: #"[?&]code=([^&\s\"'<>]+)"#)
+    }()
     
     public func login(loginResponse: String?, errorResponse: WebAuthError?, callback: @escaping (Result<LoginResponse>) -> Void) {
         if errorResponse != nil {
