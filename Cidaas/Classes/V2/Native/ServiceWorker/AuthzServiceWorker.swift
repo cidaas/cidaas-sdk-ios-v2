@@ -55,8 +55,7 @@ public class AuthzServiceWorker {
         urlString = baseURL + sharedURL.getAuthzURL()
 
         // Required for authz generate.
-        let deviceId = SDKDeviceIdResolver.resolve()
-        guard !deviceId.isEmpty else {
+        guard let cookieHeaders = SDKDeviceIdResolver.cidaasDrCookieHeaders() else {
             callback(nil, WebAuthError.shared.serviceFailureException(
                 errorCode: 417,
                 errorMessage: "deviceId missing for cidaas_dr Cookie",
@@ -69,7 +68,7 @@ public class AuthzServiceWorker {
             url: urlString,
             method: .post,
             parameters: bodyParams,
-            extraheaders: ["Cookie": "cidaas_dr=\(deviceId)"],
+            extraheaders: cookieHeaders,
             callback: callback
         )
     }

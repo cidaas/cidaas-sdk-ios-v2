@@ -286,8 +286,12 @@ public class SessionManager {
             ))
             return
         }
-        var urlReq: URLRequest = url
-        Self.applyDpopHeaderIfNeeded(to: &urlReq)
+        var urlReq = preparedUploadRequest(from: url)
+        Self.logNetworkRequest(
+            url: urlReq.url?.absoluteString ?? "",
+            headers: HTTPHeaders(urlReq.allHTTPHeaderFields ?? [:]),
+            bodyParams: parameters as [String: Any]
+        )
         session.upload(multipartFormData: { multipartFormData in
             for (key, value) in parameters {
                 guard let data = value.data(using: .utf8) else { continue }
@@ -302,8 +306,12 @@ public class SessionManager {
     }
     
     func uploadAudio(url: URLRequest, parameters: [String: String], voice: Data, callback: @escaping (String?, WebAuthError?) -> Void) {
-        var urlReq: URLRequest = url
-        Self.applyDpopHeaderIfNeeded(to: &urlReq)
+        var urlReq = preparedUploadRequest(from: url)
+        Self.logNetworkRequest(
+            url: urlReq.url?.absoluteString ?? "",
+            headers: HTTPHeaders(urlReq.allHTTPHeaderFields ?? [:]),
+            bodyParams: parameters as [String: Any]
+        )
         session.upload(multipartFormData: { multipartFormData in
             for (key, value) in parameters {
                 multipartFormData.append(value.data(using: .utf8)!, withName: key)
@@ -314,6 +322,19 @@ public class SessionManager {
         .responseString(completionHandler: { data in
             self.responseRedirect(response: data, callback: callback)
         })
+    }
+
+    /// Merges default SDK headers + DPoP; disables cookie jar when a manual Cookie is present.
+    private func preparedUploadRequest(from url: URLRequest) -> URLRequest {
+        var urlReq = url
+        for header in headers where urlReq.value(forHTTPHeaderField: header.name) == nil {
+            urlReq.setValue(header.value, forHTTPHeaderField: header.name)
+        }
+        Self.applyDpopHeaderIfNeeded(to: &urlReq)
+        if urlReq.value(forHTTPHeaderField: "Cookie") != nil {
+            urlReq.httpShouldHandleCookies = false
+        }
+        return urlReq
     }
     
     func responseRedirect(response: AFDataResponse<String>, callback: @escaping (String?, WebAuthError?) -> Void) {
