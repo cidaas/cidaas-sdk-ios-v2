@@ -79,8 +79,15 @@ public class Cidaas {
         }
     }
 
-    /// In-memory only — resets on app restart so the next `requestId` re-checks with the server.
-    public var isDeviceRegistrationCompleted: Bool = false
+    /// True after a successful device registration (or initiate 409). Stored in UserDefaults.
+    public var isDeviceRegistrationCompleted: Bool {
+        get {
+            DBHelper.shared.getDeviceRegistrationCompleted()
+        }
+        set {
+            DBHelper.shared.setDeviceRegistrationCompleted(newValue)
+        }
+    }
     
     /// Where encrypted access / refresh tokens are persisted. Default is `userDefaults`.
     /// Set to `.keychain` before login if the app should store tokens in the iOS Keychain.

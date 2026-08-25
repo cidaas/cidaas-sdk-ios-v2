@@ -15,26 +15,21 @@ public class AuthzInteractor {
 
     private let registrationLock = NSLock()
     private var registrationInFlight = false
-    private var registrationWaiters: [(Result<Bool>) -> Void] = []
+    private var registrationWaiters: [() -> Void] = []
     
     public init() {
         sharedService = AuthzServiceWorker.shared
         sharedPresenter = AuthzPresenter.shared
     }
     
-    /// Generates `request_id`. Registers the device first if needed, then sends `Cookie: cidaas_dr=<deviceId>`.
+    /// Generates `request_id` with required `cidaas_dr` Cookie.
+    /// Device registration is best-effort (iOS 14+ only) and never blocks this call.
     public func getRequestId(
         extraParams: Dictionary<String, String>,
         callback: @escaping(Result<RequestIdResponseEntity>) -> Void
     ) {
-        ensureDeviceRegisteredForRequestId { [weak self] regResult in
-            guard let self else { return }
-            switch regResult {
-            case .failure(error: let error):
-                self.sharedPresenter.getRequestId(response: nil, errorResponse: error, callback: callback)
-            case .success(result: _):
-                self.performGetRequestId(extraParams: extraParams, callback: callback)
-            }
+        ensureDeviceRegisteredForRequestId { [weak self] in
+            self?.performGetRequestId(extraParams: extraParams, callback: callback)
         }
     }
 
@@ -52,17 +47,6 @@ public class AuthzInteractor {
             return
         }
 
-        let deviceId = SDKDeviceIdResolver.resolve()
-        guard !deviceId.isEmpty else {
-            let error = WebAuthError.shared.serviceFailureException(
-                errorCode: 417,
-                errorMessage: "deviceId missing for cidaas_dr Cookie",
-                statusCode: 417
-            )
-            sharedPresenter.getRequestId(response: nil, errorResponse: error, callback: callback)
-            return
-        }
-
         sharedService.getRequestId(
             extraParams: extraParams,
             properties: savedProp
@@ -71,10 +55,8 @@ public class AuthzInteractor {
         }
     }
 
-    /// Uses the in-memory flag after a successful check this process; otherwise hits initiate (409 = already registered).
-    private func ensureDeviceRegisteredForRequestId(
-        completion: @escaping (Result<Bool>) -> Void
-    ) {
+    /// Best-effort register when the persisted flag is unset. Always continues afterward.
+    private func ensureDeviceRegisteredForRequestId(completion: @escaping () -> Void) {
         registrationLock.lock()
 
         if Cidaas.shared.isDeviceRegistrationCompleted {
@@ -82,10 +64,11 @@ public class AuthzInteractor {
             if !deviceId.isEmpty {
                 registrationLock.unlock()
                 DispatchQueue.main.async {
-                    completion(.success(result: true))
+                    completion()
                 }
                 return
             }
+            // Stale flag without a device id — clear and try register again.
             Cidaas.shared.isDeviceRegistrationCompleted = false
         }
 
@@ -103,65 +86,39 @@ public class AuthzInteractor {
     }
 
     private func startDeviceRegistrationForRequestId() {
+        // registerDevice needs iOS 14+; older OS versions still get requestId + Cookie.
         guard #available(iOS 14.0, *) else {
-            finishDeviceRegistration(
-                .failure(error: WebAuthError.shared.serviceFailureException(
-                    errorCode: 400,
-                    errorMessage: "Device registration requires iOS 14+",
-                    statusCode: 400
-                ))
-            )
+            finishDeviceRegistration()
             return
         }
 
         let clientId = DBHelper.shared.getPropertyFile()?["ClientId"]?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !clientId.isEmpty else {
-            finishDeviceRegistration(
-                .failure(error: WebAuthError.shared.serviceFailureException(
-                    errorCode: 417,
-                    errorMessage: "ClientId is required before generating requestId",
-                    statusCode: 417
-                ))
-            )
+            finishDeviceRegistration()
             return
         }
 
-        let pushId = DBHelper.shared.getFCM().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !pushId.isEmpty else {
-            finishDeviceRegistration(
-                .failure(error: WebAuthError.shared.serviceFailureException(
-                    errorCode: 417,
-                    errorMessage: "push_id (FCM) is required before generating requestId",
-                    statusCode: 417
-                ))
-            )
-            return
-        }
-
-        Cidaas.shared.device().registerDevice(clientId: clientId, pushId: pushId) { [weak self] result in
-            switch result {
-            case .failure(error: let error):
-                self?.finishDeviceRegistration(.failure(error: error))
-            case .success(result: _):
-                self?.finishDeviceRegistration(.success(result: true))
-            }
+        Cidaas.shared.device().registerDevice(
+            clientId: clientId,
+            pushId: DBHelper.shared.getFCM(),
+            includePlatformAttestation: false
+        ) { [weak self] _ in
+            // Success or failure — requestId continues either way.
+            self?.finishDeviceRegistration()
         }
     }
 
-    private func finishDeviceRegistration(_ result: Result<Bool>) {
+    private func finishDeviceRegistration() {
         registrationLock.lock()
         let waiters = registrationWaiters
         registrationWaiters.removeAll()
         registrationInFlight = false
-        if case .success = result {
-            Cidaas.shared.isDeviceRegistrationCompleted = true
-        }
         registrationLock.unlock()
 
         DispatchQueue.main.async {
             for waiter in waiters {
-                waiter(result)
+                waiter()
             }
         }
     }

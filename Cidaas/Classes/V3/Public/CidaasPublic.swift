@@ -19,7 +19,7 @@ extension Cidaas {
 
 public final class CidaasPublicBuilder {
 
-    /// OAuth `request_id` (registers device if needed, sends `cidaas_dr` Cookie). Adds `dpop_jkt` when DPoP is on.
+    /// OAuth `request_id` with required `cidaas_dr` Cookie.
     public func requestId(
         extraParams: [String: String] = [:],
         completion: @escaping (Result<RequestIdResponseEntity>) -> Void

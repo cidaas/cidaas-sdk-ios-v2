@@ -77,6 +77,15 @@ public class DBHelper : NSObject {
     public func getEnableDpop(key: String = "OAuthEnableDpop") -> Bool {
         return ((userDefaults.object(forKey: key) ?? false) as? Bool) ?? false
     }
+
+    public func setDeviceRegistrationCompleted(_ completed: Bool, key: String = "OAuthDeviceRegistrationCompleted") {
+        userDefaults.set(completed, forKey: key)
+        userDefaults.synchronize()
+    }
+
+    public func getDeviceRegistrationCompleted(key: String = "OAuthDeviceRegistrationCompleted") -> Bool {
+        return ((userDefaults.object(forKey: key) ?? false) as? Bool) ?? false
+    }
     
     // set FCM token
     public func setFCM(fcmToken : String, key : String = "OAuthFCM") {

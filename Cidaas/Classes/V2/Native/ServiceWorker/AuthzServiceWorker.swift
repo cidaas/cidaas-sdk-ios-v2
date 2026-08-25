@@ -55,16 +55,20 @@ public class AuthzServiceWorker {
         urlString = baseURL + sharedURL.getAuthzURL()
 
         let deviceId = SDKDeviceIdResolver.resolve()
-        var headers: [String: String] = [:]
-        if !deviceId.isEmpty {
-            headers["Cookie"] = "cidaas_dr=\(deviceId)"
+        guard !deviceId.isEmpty else {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: "deviceId missing for cidaas_dr Cookie",
+                statusCode: 417
+            ))
+            return
         }
-        
+
         sharedSession.startSession(
             url: urlString,
             method: .post,
             parameters: bodyParams,
-            extraheaders: headers,
+            extraheaders: ["Cookie": "cidaas_dr=\(deviceId)"],
             callback: callback
         )
     }
