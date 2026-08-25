@@ -34,7 +34,7 @@ public final class CidaasDevice {
 
     fileprivate init() {}
 
-    /// Runs initiate → verify. Pass `includePlatformAttestation: true` only when the client has AppAttest (iOS 14+).
+    /// Runs initiate → verify.
     ///
     /// - Parameters:
     ///   - clientId: OAuth client id.
@@ -251,10 +251,19 @@ public final class CidaasDevice {
 
         let urlString = baseURL + VerificationURLHelper.shared.getDeviceRegistrationVerificationURL()
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
-        let shouldCollectPlatformAttestation =
-            includePlatformAttestation && initiateResult.provider != .none
 
-        if shouldCollectPlatformAttestation {
+        if initiateResult.provider.hasPlatformAttestationProvider {
+            guard includePlatformAttestation else {
+                let err = WebAuthError.shared.serviceFailureException(
+                    errorCode: 400,
+                    errorMessage: "Device registration requires platform attestation. Pass includePlatformAttestation: true.",
+                    statusCode: 400
+                )
+                DispatchQueue.main.async {
+                    completion(.failure(error: err))
+                }
+                return
+            }
             guard #available(iOS 14.0, *) else {
                 let err = WebAuthError.shared.serviceFailureException(
                     errorCode: 400,
@@ -294,20 +303,10 @@ public final class CidaasDevice {
                         attestation = try await DeviceRegistrationFirebaseAppCheck.fetchAttestationToken()
                         keyId = "firebase"
                     case .unknown(let value):
+                        assertionFailure("Unexpected unknown provider while collecting platform attestation: \(value)")
                         let err = WebAuthError.shared.serviceFailureException(
                             errorCode: 400,
                             errorMessage: "Unsupported device registration provider: \(value)",
-                            statusCode: 400
-                        )
-                        DispatchQueue.main.async {
-                            completion(.failure(error: err))
-                        }
-                        return
-                    case .none:
-                        assertionFailure("Unexpected .none provider while collecting platform attestation")
-                        let err = WebAuthError.shared.serviceFailureException(
-                            errorCode: 400,
-                            errorMessage: "Unexpected empty device registration provider while collecting platform attestation.",
                             statusCode: 400
                         )
                         DispatchQueue.main.async {
@@ -337,7 +336,19 @@ public final class CidaasDevice {
             return
         }
 
-        // DPoP + biometric proof only (no App Attest / App Check).
+        if case .unknown(let value) = initiateResult.provider, !value.isEmpty {
+            let err = WebAuthError.shared.serviceFailureException(
+                errorCode: 400,
+                errorMessage: "Unsupported device registration provider: \(value)",
+                statusCode: 400
+            )
+            DispatchQueue.main.async {
+                completion(.failure(error: err))
+            }
+            return
+        }
+
+        // No platform provider: DPoP + biometric only.
         DispatchQueue.global(qos: .userInitiated).async {
             self.submitVerification(
                 urlString: urlString,
