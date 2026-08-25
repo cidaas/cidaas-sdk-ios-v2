@@ -149,7 +149,22 @@ public class SessionManager {
 
         Self.logNetworkRequest(url: url, headers: requestHeaders, bodyParams: bodyParams)
 
-        session.request(url, method: method, parameters: bodyParams, encoding: JSONEncoding.default, headers: requestHeaders)
+        // Manual `Cookie` headers must not compete with URLSession cookie storage.
+        let hasManualCookie = extraheaders.keys.contains {
+            $0.caseInsensitiveCompare("Cookie") == .orderedSame
+        }
+
+        session.request(
+            url,
+            method: method,
+            parameters: bodyParams,
+            encoding: JSONEncoding.default,
+            headers: requestHeaders
+        ) { urlRequest in
+            if hasManualCookie {
+                urlRequest.httpShouldHandleCookies = false
+            }
+        }
             .redirect(using: Redirector.doNotFollow)
             .validate(statusCode: 200..<303)
             .responseString(encoding: .utf8, emptyResponseCodes: Set([204, 205, 302])) { response in

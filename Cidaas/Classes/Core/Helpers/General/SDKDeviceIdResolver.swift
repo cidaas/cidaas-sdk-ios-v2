@@ -11,17 +11,28 @@ enum SDKDeviceIdResolver {
 
     private static let keychainKey = "cidaas_sdk_device_id"
 
-    /// Stable SDK device id: `DBHelper` first, then Keychain, then `identifierForVendor` (UUID fallback).
+    /// Stable device id (UserDefaults → Keychain → vendor id). Always lowercase.
     static func resolve(persistToDBHelper: Bool = true) -> String {
         var info = DBHelper.shared.getDeviceInfo()
-        let stored = info.deviceId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stored = normalize(info.deviceId)
         if !stored.isEmpty {
+            if info.deviceId != stored {
+                info.deviceId = stored
+                if persistToDBHelper {
+                    DBHelper.shared.setDeviceInfo(deviceInfo: info)
+                }
+                _ = KeychainWrapper.standard.set(stored, forKey: keychainKey)
+            }
             return stored
         }
 
-        if let keychainId = KeychainWrapper.standard.string(forKey: keychainKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-           !keychainId.isEmpty {
+        let keychainRaw = KeychainWrapper.standard.string(forKey: keychainKey) ?? ""
+        let keychainId = normalize(keychainRaw)
+        if !keychainId.isEmpty {
+            // Only rewrite Keychain when normalization changed the stored value.
+            if keychainId != keychainRaw {
+                _ = KeychainWrapper.standard.set(keychainId, forKey: keychainKey)
+            }
             if persistToDBHelper {
                 info.deviceId = keychainId
                 DBHelper.shared.setDeviceInfo(deviceInfo: info)
@@ -29,12 +40,26 @@ enum SDKDeviceIdResolver {
             return keychainId
         }
 
-        let generated = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+        let generated = normalize(UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString)
         _ = KeychainWrapper.standard.set(generated, forKey: keychainKey)
         if persistToDBHelper {
             info.deviceId = generated
             DBHelper.shared.setDeviceInfo(deviceInfo: info)
         }
         return generated
+    }
+
+    /// Writes a lowercase device id to UserDefaults + Keychain.
+    static func persist(_ deviceId: String) {
+        let normalized = normalize(deviceId)
+        guard !normalized.isEmpty else { return }
+        var info = DBHelper.shared.getDeviceInfo()
+        info.deviceId = normalized
+        DBHelper.shared.setDeviceInfo(deviceInfo: info)
+        _ = KeychainWrapper.standard.set(normalized, forKey: keychainKey)
+    }
+
+    private static func normalize(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }

@@ -5,14 +5,13 @@
 
 import Foundation
 
-/// Attestation provider from the device registration initiate response (verification options).
+/// Attestation provider from the device registration initiate response.
 public enum DeviceRegistrationProvider: Equatable {
     /// Apple App Attest.
     case apple
     /// Firebase App Check.
     case firebase
-    /// Empty initiate `provider`; verification options have no AppAttest.
-    case none
+    /// Unrecognized or empty initiate `provider`.
     case unknown(String)
 
     init(apiValue: String?) {
@@ -22,10 +21,18 @@ public enum DeviceRegistrationProvider: Equatable {
             self = .apple
         case "firebase":
             self = .firebase
-        case "":
-            self = .none
         default:
             self = .unknown(normalized)
+        }
+    }
+
+    /// Whether initiate returned a concrete App Attest / App Check provider.
+    var hasPlatformAttestationProvider: Bool {
+        switch self {
+        case .apple, .firebase:
+            return true
+        case .unknown:
+            return false
         }
     }
 }

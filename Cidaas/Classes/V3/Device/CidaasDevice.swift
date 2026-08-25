@@ -7,14 +7,14 @@ import Foundation
 
 extension Cidaas {
 
-    /// Device registration entry point (iOS 14+).
+    /// Device registration entry point.
     public func device() -> CidaasDevice {
         CidaasDevice()
     }
 }
 
-/// Registers the current device via initiate → verify, returning a bound `device_id`.
-/// Platform attestation requirements come from verification options (initiate `provider`); the SDK follows that response.
+/// Registers the device via initiate → verify.
+/// App Attest / App Check needs iOS 14+; without platform attestation it works on older OS versions.
 public final class CidaasDevice {
 
     /// Host-app hook that returns a Firebase App Check token when initiate `provider` is `firebase`.
@@ -34,31 +34,33 @@ public final class CidaasDevice {
 
     fileprivate init() {}
 
-    @available(iOS 14.0, *)
-    private func appAttestUnavailableError() -> WebAuthError {
-        let err = WebAuthError.shared.serviceFailureException(
-            errorCode: 400,
-            errorMessage: DeviceRegistrationAppAttest.unsupportedError().localizedDescription,
-            statusCode: 400
-        )
-        return err
-    }
-
-    /// Runs device registration. Align `includePlatformAttestation` with client verification options (initiate `provider`).
+    /// Runs initiate → verify.
     ///
     /// - Parameters:
     ///   - clientId: OAuth client id.
     ///   - pushId: FCM token; required when `includePlatformAttestation` is `true`.
-    ///   - includePlatformAttestation: When `true`, sends `push_id` and collects App Attest / App Check for the initiate `provider`.
-    ///     Use `false` only when verification options have no AppAttest for this platform (`provider` empty).
+    ///   - includePlatformAttestation: Collects App Attest / App Check when true; otherwise DPoP + biometric proof only.
     ///   - completion: Registered `device_id`, or an error.
-    @available(iOS 14.0, *)
     public func registerDevice(
         clientId: String,
         pushId: String = "",
         includePlatformAttestation: Bool = false,
         completion: @escaping (Result<DeviceRegistrationVerifyResult>) -> Void
     ) {
+        if includePlatformAttestation {
+            guard #available(iOS 14.0, *) else {
+                let err = WebAuthError.shared.serviceFailureException(
+                    errorCode: 400,
+                    errorMessage: "Platform attestation requires iOS 14+.",
+                    statusCode: 400
+                )
+                DispatchQueue.main.async {
+                    completion(.failure(error: err))
+                }
+                return
+            }
+        }
+
         startRegistration(
             clientId: clientId,
             pushId: pushId,
@@ -66,8 +68,8 @@ public final class CidaasDevice {
         ) { initiateResult in
             switch initiateResult {
             case .failure(error: let error):
-                // HTTP 409 on initiate means the device is already registered.
-                if let alreadyRegistered = self.alreadyRegisteredResult(responseString: nil, error: error) {
+                // 409 on initiate = already registered
+                if let alreadyRegistered = self.alreadyRegisteredResult(error: error) {
                     self.persistDeviceId(alreadyRegistered.deviceId)
                     completion(.success(result: alreadyRegistered))
                 } else {
@@ -84,7 +86,7 @@ public final class CidaasDevice {
     }
 
     /// Async convenience over the completion-based `registerDevice`.
-    @available(iOS 14.0, *)
+    @available(iOS 13.0, *)
     public func registerDevice(
         clientId: String,
         pushId: String = "",
@@ -138,7 +140,7 @@ public final class CidaasDevice {
             DBHelper.shared.setFCM(fcmToken: trimmedPushId)
         }
 
-        let deviceId = SDKDeviceIdResolver.resolve().trimmingCharacters(in: .whitespacesAndNewlines)
+        let deviceId = SDKDeviceIdResolver.resolve()
         guard !deviceId.isEmpty else {
             let err = WebAuthError.shared.propertyMissingException()
             err.errorMessage = "device_id could not be resolved for device registration."
@@ -215,7 +217,6 @@ public final class CidaasDevice {
         }
     }
 
-    @available(iOS 14.0, *)
     private func completeRegistration(
         initiateResult: DeviceRegistrationInitiateResult,
         includePlatformAttestation: Bool,
@@ -251,19 +252,41 @@ public final class CidaasDevice {
         let urlString = baseURL + VerificationURLHelper.shared.getDeviceRegistrationVerificationURL()
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
 
-        Task {
-            do {
-                let attestation: String
-                let keyId: String
-
-                let shouldCollectPlatformAttestation =
-                    includePlatformAttestation && initiateResult.provider != .none
-
-                if shouldCollectPlatformAttestation {
+        if initiateResult.provider.hasPlatformAttestationProvider {
+            guard includePlatformAttestation else {
+                let err = WebAuthError.shared.serviceFailureException(
+                    errorCode: 400,
+                    errorMessage: "Device registration requires platform attestation. Pass includePlatformAttestation: true.",
+                    statusCode: 400
+                )
+                DispatchQueue.main.async {
+                    completion(.failure(error: err))
+                }
+                return
+            }
+            guard #available(iOS 14.0, *) else {
+                let err = WebAuthError.shared.serviceFailureException(
+                    errorCode: 400,
+                    errorMessage: "Platform attestation requires iOS 14+.",
+                    statusCode: 400
+                )
+                DispatchQueue.main.async {
+                    completion(.failure(error: err))
+                }
+                return
+            }
+            Task {
+                do {
+                    let attestation: String
+                    let keyId: String
                     switch initiateResult.provider {
                     case .apple:
                         guard DeviceRegistrationAppAttest.isSupported else {
-                            let err = appAttestUnavailableError()
+                            let err = WebAuthError.shared.serviceFailureException(
+                                errorCode: 400,
+                                errorMessage: DeviceRegistrationAppAttest.unsupportedError().localizedDescription,
+                                statusCode: 400
+                            )
                             DispatchQueue.main.async {
                                 completion(.failure(error: err))
                             }
@@ -280,6 +303,7 @@ public final class CidaasDevice {
                         attestation = try await DeviceRegistrationFirebaseAppCheck.fetchAttestationToken()
                         keyId = "firebase"
                     case .unknown(let value):
+                        assertionFailure("Unexpected unknown provider while collecting platform attestation: \(value)")
                         let err = WebAuthError.shared.serviceFailureException(
                             errorCode: 400,
                             errorMessage: "Unsupported device registration provider: \(value)",
@@ -289,57 +313,111 @@ public final class CidaasDevice {
                             completion(.failure(error: err))
                         }
                         return
-                    case .none:
-                        assertionFailure("Unexpected .none provider while collecting platform attestation")
-                        let err = WebAuthError.shared.serviceFailureException(
-                            errorCode: 400,
-                            errorMessage: "Unexpected empty device registration provider while collecting platform attestation.",
-                            statusCode: 400
-                        )
-                        DispatchQueue.main.async {
-                            completion(.failure(error: err))
-                        }
-                        return
                     }
-                } else {
-                    // DPoP + biometric proof only (no App Attest / App Check token).
-                    attestation = ""
-                    keyId = ""
+                    self.submitVerification(
+                        urlString: urlString,
+                        sessionId: sessionId,
+                        attestation: attestation,
+                        keyId: keyId,
+                        appVersion: appVersion,
+                        completion: completion
+                    )
+                } catch {
+                    let err = WebAuthError.shared.serviceFailureException(
+                        errorCode: 400,
+                        errorMessage: error.localizedDescription,
+                        statusCode: 400
+                    )
+                    DispatchQueue.main.async {
+                        completion(.failure(error: err))
+                    }
                 }
+            }
+            return
+        }
 
-                let prepared = try DeviceRegistrationProofs.prepareVerificationRequest(
-                    verificationURLString: urlString,
-                    sessionId: sessionId,
-                    attestation: attestation,
-                    keyId: keyId,
-                    appVersion: appVersion,
-                    platform: "ios"
-                )
-                SessionManager.shared.startSession(
-                    url: urlString,
-                    method: .post,
-                    parameters: prepared.bodyParams
-                ) { responseString, error in
-                    if let error {
-                        if let alreadyRegistered = self.alreadyRegisteredResult(
-                            responseString: responseString,
-                            error: error
-                        ) {
-                            self.persistDeviceId(alreadyRegistered.deviceId)
-                            DispatchQueue.main.async {
-                                completion(.success(result: alreadyRegistered))
-                            }
-                            return
-                        }
+        if case .unknown(let value) = initiateResult.provider, !value.isEmpty {
+            let err = WebAuthError.shared.serviceFailureException(
+                errorCode: 400,
+                errorMessage: "Unsupported device registration provider: \(value)",
+                statusCode: 400
+            )
+            DispatchQueue.main.async {
+                completion(.failure(error: err))
+            }
+            return
+        }
+
+        // No platform provider: DPoP + biometric only.
+        DispatchQueue.global(qos: .userInitiated).async {
+            self.submitVerification(
+                urlString: urlString,
+                sessionId: sessionId,
+                attestation: "",
+                keyId: "",
+                appVersion: appVersion,
+                completion: completion
+            )
+        }
+    }
+
+    private func submitVerification(
+        urlString: String,
+        sessionId: String,
+        attestation: String,
+        keyId: String,
+        appVersion: String,
+        completion: @escaping (Result<DeviceRegistrationVerifyResult>) -> Void
+    ) {
+        do {
+            let prepared = try DeviceRegistrationProofs.prepareVerificationRequest(
+                verificationURLString: urlString,
+                sessionId: sessionId,
+                attestation: attestation,
+                keyId: keyId,
+                appVersion: appVersion,
+                platform: "ios"
+            )
+            SessionManager.shared.startSession(
+                url: urlString,
+                method: .post,
+                parameters: prepared.bodyParams
+            ) { responseString, error in
+                if let error {
+                    DispatchQueue.main.async {
+                        completion(.failure(error: error))
+                    }
+                    return
+                }
+                guard let responseString, let data = responseString.data(using: .utf8) else {
+                    let err = WebAuthError.shared.serviceFailureException(
+                        errorCode: 400,
+                        errorMessage: "Empty response",
+                        statusCode: 400
+                    )
+                    DispatchQueue.main.async {
+                        completion(.failure(error: err))
+                    }
+                    return
+                }
+                do {
+                    let decoded = try JSONDecoder().decode(DeviceRegistrationVerifyAPIResponse.self, from: data)
+                    guard decoded.success, let payload = decoded.data else {
+                        let err = WebAuthError.shared.serviceFailureException(
+                            errorCode: Int(decoded.status),
+                            errorMessage: "Device registration verification was not successful.",
+                            statusCode: Int(decoded.status)
+                        )
                         DispatchQueue.main.async {
-                            completion(.failure(error: error))
+                            completion(.failure(error: err))
                         }
                         return
                     }
-                    guard let responseString, let data = responseString.data(using: .utf8) else {
+                    let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    guard !deviceId.isEmpty else {
                         let err = WebAuthError.shared.serviceFailureException(
                             errorCode: 400,
-                            errorMessage: "Empty response",
+                            errorMessage: "Verify response missing device_id",
                             statusCode: 400
                         )
                         DispatchQueue.main.async {
@@ -347,98 +425,43 @@ public final class CidaasDevice {
                         }
                         return
                     }
-                    do {
-                        let decoded = try JSONDecoder().decode(DeviceRegistrationVerifyAPIResponse.self, from: data)
-                        if decoded.status == 409 {
-                            if let alreadyRegistered = self.alreadyRegisteredResult(
-                                responseString: responseString,
-                                error: nil,
-                                decoded: decoded
-                            ) {
-                                self.persistDeviceId(alreadyRegistered.deviceId)
-                                DispatchQueue.main.async {
-                                    completion(.success(result: alreadyRegistered))
-                                }
-                                return
-                            }
-                        }
-                        guard decoded.success, let payload = decoded.data else {
-                            let err = WebAuthError.shared.serviceFailureException(
-                                errorCode: Int(decoded.status),
-                                errorMessage: "Device registration verification was not successful.",
-                                statusCode: Int(decoded.status)
-                            )
-                            DispatchQueue.main.async {
-                                completion(.failure(error: err))
-                            }
-                            return
-                        }
-                        let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                        self.persistDeviceId(deviceId)
-                        DispatchQueue.main.async {
-                            completion(.success(result: DeviceRegistrationVerifyResult(deviceId: deviceId)))
-                        }
-                    } catch {
-                        let err = WebAuthError.shared.serviceFailureException(
-                            errorCode: 400,
-                            errorMessage: error.localizedDescription,
-                            statusCode: 400
-                        )
-                        DispatchQueue.main.async {
-                            completion(.failure(error: err))
-                        }
+                    self.persistDeviceId(deviceId)
+                    DispatchQueue.main.async {
+                        completion(.success(result: DeviceRegistrationVerifyResult(deviceId: deviceId)))
+                    }
+                } catch {
+                    let err = WebAuthError.shared.serviceFailureException(
+                        errorCode: 400,
+                        errorMessage: error.localizedDescription,
+                        statusCode: 400
+                    )
+                    DispatchQueue.main.async {
+                        completion(.failure(error: err))
                     }
                 }
-            } catch {
-                let err = WebAuthError.shared.serviceFailureException(
-                    errorCode: 400,
-                    errorMessage: error.localizedDescription,
-                    statusCode: 400
-                )
-                DispatchQueue.main.async {
-                    completion(.failure(error: err))
-                }
+            }
+        } catch {
+            let err = WebAuthError.shared.serviceFailureException(
+                errorCode: 400,
+                errorMessage: error.localizedDescription,
+                statusCode: 400
+            )
+            DispatchQueue.main.async {
+                completion(.failure(error: err))
             }
         }
     }
 
     private func persistDeviceId(_ deviceId: String) {
-        var info = DBHelper.shared.getDeviceInfo()
-        info.deviceId = deviceId
-        DBHelper.shared.setDeviceInfo(deviceInfo: info)
+        SDKDeviceIdResolver.persist(deviceId)
+        Cidaas.shared.deviceInfo.deviceId = SDKDeviceIdResolver.resolve()
+        Cidaas.shared.isDeviceRegistrationCompleted = true
     }
 
-    /// Maps HTTP 409 (already registered) to a successful `device_id` result when possible.
-    private func alreadyRegisteredResult(
-        responseString: String?,
-        error: WebAuthError?,
-        decoded: DeviceRegistrationVerifyAPIResponse? = nil
-    ) -> DeviceRegistrationVerifyResult? {
-        let statusFromError = error?.statusCode == 409
-        let statusFromBody = decoded?.status == 409
-        let statusFromJSON: Bool = {
-            guard let responseString, let data = responseString.data(using: .utf8),
-                  let parsed = try? JSONDecoder().decode(DeviceRegistrationVerifyAPIResponse.self, from: data)
-            else { return false }
-            return parsed.status == 409
-        }()
-        guard statusFromError || statusFromBody || statusFromJSON else { return nil }
-
-        if let responseString, let data = responseString.data(using: .utf8),
-           let parsed = try? JSONDecoder().decode(DeviceRegistrationVerifyAPIResponse.self, from: data),
-           let payload = parsed.data {
-            let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            if !deviceId.isEmpty {
-                return DeviceRegistrationVerifyResult(deviceId: deviceId)
-            }
-        }
-
-        let stored = DBHelper.shared.getDeviceInfo().deviceId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if !stored.isEmpty {
-            return DeviceRegistrationVerifyResult(deviceId: stored)
-        }
-
-        let resolved = SDKDeviceIdResolver.resolve().trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    /// Maps HTTP 409 (already registered) to a successful local `device_id` when possible.
+    private func alreadyRegisteredResult(error: WebAuthError?) -> DeviceRegistrationVerifyResult? {
+        guard error?.statusCode == 409 else { return nil }
+        let resolved = SDKDeviceIdResolver.resolve()
         guard !resolved.isEmpty else { return nil }
         return DeviceRegistrationVerifyResult(deviceId: resolved)
     }

@@ -78,6 +78,16 @@ public class Cidaas {
             logw("ENABLE_DPOP=\(enableDpop)", cname: "cidaas-sdk-info-log")
         }
     }
+
+    /// True after a successful device registration (or initiate 409). Stored in UserDefaults.
+    public var isDeviceRegistrationCompleted: Bool {
+        get {
+            DBHelper.shared.getDeviceRegistrationCompleted()
+        }
+        set {
+            DBHelper.shared.setDeviceRegistrationCompleted(newValue)
+        }
+    }
     
     /// Where encrypted access / refresh tokens are persisted. Default is `userDefaults`.
     /// Set to `.keychain` before login if the app should store tokens in the iOS Keychain.

@@ -19,7 +19,11 @@ public class AuthzServiceWorker {
     }
     
     // getting requestId
-    public func getRequestId(extraParams: Dictionary<String, String>, properties : Dictionary<String, String>, callback: @escaping (String?, WebAuthError?) -> Void) {
+    public func getRequestId(
+        extraParams: Dictionary<String, String>,
+        properties : Dictionary<String, String>,
+        callback: @escaping (String?, WebAuthError?) -> Void
+    ) {
         
         // local variables
         var urlString : String
@@ -49,7 +53,24 @@ public class AuthzServiceWorker {
         
         // construct url
         urlString = baseURL + sharedURL.getAuthzURL()
-        
-        sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams, callback: callback)
+
+        // Required for authz generate.
+        let deviceId = SDKDeviceIdResolver.resolve()
+        guard !deviceId.isEmpty else {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: "deviceId missing for cidaas_dr Cookie",
+                statusCode: 417
+            ))
+            return
+        }
+
+        sharedSession.startSession(
+            url: urlString,
+            method: .post,
+            parameters: bodyParams,
+            extraheaders: ["Cookie": "cidaas_dr=\(deviceId)"],
+            callback: callback
+        )
     }
 }

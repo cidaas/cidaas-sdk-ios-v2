@@ -31,8 +31,7 @@ public final class CidaasWebAuthBuilder {
         delegateViewController = delegate
     }
 
-    /// Fetches an OAuth `request_id` (e.g. before ``social(provider:requestId:)``).
-    /// Includes `dpop_jkt` when ``Cidaas/ENABLE_DPOP`` is on (iOS 14+).
+    /// OAuth `request_id`
     public func requestId(
         extraParams: [String: String] = [:],
         completion: @escaping (Result<RequestIdResponseEntity>) -> Void

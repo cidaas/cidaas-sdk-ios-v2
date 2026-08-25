@@ -175,9 +175,9 @@ public final class CidaasNativeRegistrationBuilder {
         Cidaas.shared.publicAPI()
             .requestId(extraParams: extraParams) { result in
                 switch result {
-                case .failure(let error):
+                case .failure(error: let error):
                     CidaasV3Callback.deliver(.failure(error: error), to: completion)
-                case .success(let response):
+                case .success(result: let response):
                     guard response.success else {
                         CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
                             errorCode: 2,
