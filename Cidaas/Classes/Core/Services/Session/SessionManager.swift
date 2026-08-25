@@ -144,8 +144,14 @@ public class SessionManager {
         for (key, value) in extraheaders {
             requestHeaders[key] = value
         }
+        // Form body for PAR; do not override an explicit caller Content-Type
         if encoding is URLEncoding {
-            requestHeaders["Content-Type"] = "application/x-www-form-urlencoded"
+            let callerSetContentType = extraheaders.keys.contains {
+                $0.caseInsensitiveCompare("Content-Type") == .orderedSame
+            }
+            if !callerSetContentType {
+                requestHeaders["Content-Type"] = "application/x-www-form-urlencoded"
+            }
         }
         if let locale = bodyParams?["locale"] as? String {
             requestHeaders["Accept-Language"] = locale

@@ -176,13 +176,18 @@ public class LoginController {
     public func constructParAuthorizationURL(
         requestURI: String,
         properties: Dictionary<String, String>
-    ) -> URL {
-        var urlComponents = URLComponents(string: properties["AuthorizationURL"] ?? "")
-        urlComponents?.queryItems = [
+    ) -> URL? {
+        let authzURL = (properties["AuthorizationURL"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !authzURL.isEmpty,
+              var urlComponents = URLComponents(string: authzURL)
+        else {
+            return nil
+        }
+        urlComponents.queryItems = [
             URLQueryItem(name: "client_id", value: properties["ClientId"] ?? ""),
             URLQueryItem(name: "request_uri", value: requestURI)
         ]
-        return (urlComponents?.url)!
+        return urlComponents.url
     }
     
     public func constructSocialURL(provider: String, requestId: String, properties: Dictionary<String, String>) -> URL {

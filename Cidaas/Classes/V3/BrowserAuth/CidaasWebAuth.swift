@@ -271,10 +271,15 @@ enum BrowserAuthPerform {
             case .failure(let error):
                 completion(.failure(error: error))
             case .success(let par):
-                let url = LoginController.shared.constructParAuthorizationURL(
+                guard let url = LoginController.shared.constructParAuthorizationURL(
                     requestURI: par.request_uri,
                     properties: properties
-                )
+                ) else {
+                    let error = WebAuthError.shared.propertyMissingException()
+                    error.errorMessage = "AuthorizationURL is missing or invalid"
+                    completion(.failure(error: error))
+                    return
+                }
                 completion(.success(result: url))
             }
         }

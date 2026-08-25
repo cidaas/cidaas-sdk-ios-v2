@@ -9,7 +9,7 @@ import Alamofire
 /// POST `/authz-srv/par` → `request_uri`.
 public class ParServiceWorker {
 
-    public static var shared = ParServiceWorker()
+    public static let shared = ParServiceWorker()
 
     private let session: SessionManager
     private let parPath = "/authz-srv/par"
