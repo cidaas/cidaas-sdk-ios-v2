@@ -334,6 +334,7 @@ public final class CidaasMFAAuthenticationBuilder {
     }
 
     /// `POST verification-srv/authentication/{method}/initiation`
+    /// Sends required `Cookie: cidaas_dr=<deviceId>` (same as authz `requestId`).
     /// - `INITIAL_AUTHENTICATION`: pass `identifier` (e.g. email); do not pass `sub`.
     /// - `MULTIFACTOR_AUTHENTICATION`: pass masked `sub` only (not the logged-in user's real sub).
     public func initiation(
@@ -395,6 +396,7 @@ public final class CidaasMFAAuthenticationBuilder {
         }
     }
 
+    /// Sends required `Cookie: cidaas_dr=<deviceId>` (same as authz `requestId`).
     public func verification(
         exchangeId: String? = nil,
         otp: String? = nil,

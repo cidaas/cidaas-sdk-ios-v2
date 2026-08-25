@@ -137,8 +137,23 @@ public class VerificationServiceWorker {
             callback(nil, WebAuthError.shared.conversionException())
             return
         }
-        
-        sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams, callback: callback)
+
+        guard let cookieHeaders = SDKDeviceIdResolver.cidaasDrCookieHeaders() else {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: "deviceId missing for cidaas_dr Cookie",
+                statusCode: 417
+            ))
+            return
+        }
+
+        sharedSession.startSession(
+            url: urlString,
+            method: .post,
+            parameters: bodyParams,
+            extraheaders: cookieHeaders,
+            callback: callback
+        )
     }
     
     public func pushAcknowledge(verificationType: String, incomingData: PushAcknowledgeRequest, properties: Dictionary<String, String>, callback: @escaping (String?, WebAuthError?) -> Void) {
@@ -237,6 +252,15 @@ public class VerificationServiceWorker {
             callback(nil, WebAuthError.shared.conversionException())
             return
         }
+
+        guard let cookieHeaders = SDKDeviceIdResolver.cidaasDrCookieHeaders() else {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: "deviceId missing for cidaas_dr Cookie",
+                statusCode: 417
+            ))
+            return
+        }
         
         // construct body params for FACE & VOICE
         var bodyParams = Dictionary<String, String>()
@@ -245,7 +269,11 @@ public class VerificationServiceWorker {
         bodyParams["exchange_id"] = incomingData.exchange_id
         bodyParams["client_id"] = incomingData.client_id
         
-        let enrolledURL = try! URLRequest(url: URL(string: urlString)!, method: .post, headers: nil)
+        var enrolledURL = try! URLRequest(url: URL(string: urlString)!, method: .post, headers: nil)
+        for (key, value) in cookieHeaders {
+            enrolledURL.setValue(value, forHTTPHeaderField: key)
+        }
+        enrolledURL.httpShouldHandleCookies = false
         
         switch verificationType {
         case VerificationTypes.FACE.rawValue:
@@ -255,7 +283,13 @@ public class VerificationServiceWorker {
             sharedSession.uploadAudio(url: enrolledURL, parameters: bodyParams, voice: voice, callback: callback)
             break
         default:
-            sharedSession.startSession(url: urlString, method: .post, parameters: bodyParamsDefault, callback: callback)
+            sharedSession.startSession(
+                url: urlString,
+                method: .post,
+                parameters: bodyParamsDefault,
+                extraheaders: cookieHeaders,
+                callback: callback
+            )
             break
         }
     }
