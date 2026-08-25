@@ -357,10 +357,15 @@ public class SessionManager {
             }
             if response.response?.statusCode == 302 {
                 let loc = response.response?.headers.value(for: "Location")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                if loc.isEmpty {
-                    callback(nil, WebAuthError.shared.serviceFailureException(errorCode: 302, errorMessage: "302 without Location header", statusCode: 302))
-                } else {
+                if !loc.isEmpty {
                     callback(loc, nil)
+                } else {
+                    let body = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !body.isEmpty {
+                        callback(body, nil)
+                    } else {
+                        callback(nil, WebAuthError.shared.serviceFailureException(errorCode: 302, errorMessage: "302 without Location header", statusCode: 302))
+                    }
                 }
                 return
             }
