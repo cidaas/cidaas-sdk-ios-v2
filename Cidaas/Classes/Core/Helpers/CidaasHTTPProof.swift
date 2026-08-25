@@ -3,13 +3,12 @@
 //  Cidaas
 //
 
-import CryptoKit
+import CommonCrypto
 import Foundation
 import LocalAuthentication
 import Security
 
 /// Builds DPoP proof JWTs for OAuth token calls and device-registration attestation payloads.
-@available(iOS 14.0, *)
 enum CidaasHTTPProof {
 
     enum KeychainTag {
@@ -264,9 +263,17 @@ enum CidaasHTTPProof {
         let headerB64 = base64URL(try JSONEncoder().encode(header))
         let claimsB64 = base64URL(try JSONEncoder().encode(claims))
         let signingInput = "\(headerB64).\(claimsB64)"
-        let digest = Data(SHA256.hash(data: Data(signingInput.utf8)))
+        let digest = sha256(Data(signingInput.utf8))
         let signature = try signDigest(privateKey: privateKey, digest32: digest)
         return "\(signingInput).\(base64URL(signature))"
+    }
+
+    private static func sha256(_ data: Data) -> Data {
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes { buffer in
+            _ = CC_SHA256(buffer.baseAddress, CC_LONG(buffer.count), &hash)
+        }
+        return Data(hash)
     }
 
     private static func ecP256JWK(from privateKey: SecKey) throws -> JWK {
@@ -291,8 +298,7 @@ enum CidaasHTTPProof {
     private static func jwkThumbprintSHA256(privateKey: SecKey) throws -> String {
         let (x, y) = try ecP256PublicCoordinates(from: privateKey)
         let json = "{\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"\(base64URL(x))\",\"y\":\"\(base64URL(y))\"}"
-        let digest = Data(SHA256.hash(data: Data(json.utf8)))
-        return base64URL(digest)
+        return base64URL(sha256(Data(json.utf8)))
     }
 
     private static func pkixDERBase64(from privateKey: SecKey) throws -> String {
@@ -348,8 +354,7 @@ enum CidaasHTTPProof {
 
     /// RFC 9449 `ath` = base64url(SHA-256(access_token)) using the raw token string.
     private static func accessTokenHash(_ accessToken: String) -> String {
-        let digest = Data(SHA256.hash(data: Data(accessToken.utf8)))
-        return base64URL(digest)
+        base64URL(sha256(Data(accessToken.utf8)))
     }
 
     private static func base64URL(_ data: Data) -> String {

@@ -54,6 +54,7 @@ public class AuthzServiceWorker {
         // construct url
         urlString = baseURL + sharedURL.getAuthzURL()
 
+        // Required for authz generate.
         let deviceId = SDKDeviceIdResolver.resolve()
         guard !deviceId.isEmpty else {
             callback(nil, WebAuthError.shared.serviceFailureException(

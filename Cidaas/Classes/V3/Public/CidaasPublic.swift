@@ -19,7 +19,7 @@ extension Cidaas {
 
 public final class CidaasPublicBuilder {
 
-    /// OAuth `request_id` with required `cidaas_dr` Cookie.
+    /// OAuth `request_id` with required `cidaas_dr` Cookie. Registers without platform attestation when needed; fails if register fails.
     public func requestId(
         extraParams: [String: String] = [:],
         completion: @escaping (Result<RequestIdResponseEntity>) -> Void

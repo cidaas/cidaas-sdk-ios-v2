@@ -5,14 +5,13 @@
 
 import Foundation
 
-@available(iOS 14.0, *)
 enum DeviceRegistrationProofs {
 
     struct PreparedVerificationRequest {
         let bodyParams: [String: Any]
     }
 
-    /// Builds the verify request body with a `dpop+jwt` (platform attestation claim follows backend requirements).
+    /// Builds the verify body with a `dpop+jwt`.
     static func prepareVerificationRequest(
         verificationURLString: String,
         sessionId: String,

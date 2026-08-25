@@ -15,7 +15,7 @@ public class AuthzInteractor {
 
     private let registrationLock = NSLock()
     private var registrationInFlight = false
-    private var registrationWaiters: [() -> Void] = []
+    private var registrationWaiters: [(Result<Bool>) -> Void] = []
     
     public init() {
         sharedService = AuthzServiceWorker.shared
@@ -23,13 +23,19 @@ public class AuthzInteractor {
     }
     
     /// Generates `request_id` with required `cidaas_dr` Cookie.
-    /// Device registration is best-effort (iOS 14+ only) and never blocks this call.
+    /// Registers first when needed (no platform attestation). Fails if registration fails.
     public func getRequestId(
         extraParams: Dictionary<String, String>,
         callback: @escaping(Result<RequestIdResponseEntity>) -> Void
     ) {
-        ensureDeviceRegisteredForRequestId { [weak self] in
-            self?.performGetRequestId(extraParams: extraParams, callback: callback)
+        ensureDeviceRegisteredForRequestId { [weak self] regResult in
+            guard let self else { return }
+            switch regResult {
+            case .failure(error: let error):
+                self.sharedPresenter.getRequestId(response: nil, errorResponse: error, callback: callback)
+            case .success(result: _):
+                self.performGetRequestId(extraParams: extraParams, callback: callback)
+            }
         }
     }
 
@@ -55,8 +61,10 @@ public class AuthzInteractor {
         }
     }
 
-    /// Best-effort register when the persisted flag is unset. Always continues afterward.
-    private func ensureDeviceRegisteredForRequestId(completion: @escaping () -> Void) {
+    /// Registers when the flag is unset (no platform attestation).
+    private func ensureDeviceRegisteredForRequestId(
+        completion: @escaping (Result<Bool>) -> Void
+    ) {
         registrationLock.lock()
 
         if Cidaas.shared.isDeviceRegistrationCompleted {
@@ -64,7 +72,7 @@ public class AuthzInteractor {
             if !deviceId.isEmpty {
                 registrationLock.unlock()
                 DispatchQueue.main.async {
-                    completion()
+                    completion(.success(result: true))
                 }
                 return
             }
@@ -86,30 +94,33 @@ public class AuthzInteractor {
     }
 
     private func startDeviceRegistrationForRequestId() {
-        // registerDevice needs iOS 14+; older OS versions still get requestId + Cookie.
-        guard #available(iOS 14.0, *) else {
-            finishDeviceRegistration()
-            return
-        }
-
         let clientId = DBHelper.shared.getPropertyFile()?["ClientId"]?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !clientId.isEmpty else {
-            finishDeviceRegistration()
+            finishDeviceRegistration(
+                .failure(error: WebAuthError.shared.serviceFailureException(
+                    errorCode: 417,
+                    errorMessage: "ClientId is required before generating requestId",
+                    statusCode: 417
+                ))
+            )
             return
         }
 
         Cidaas.shared.device().registerDevice(
             clientId: clientId,
-            pushId: DBHelper.shared.getFCM(),
             includePlatformAttestation: false
-        ) { [weak self] _ in
-            // Success or failure — requestId continues either way.
-            self?.finishDeviceRegistration()
+        ) { [weak self] result in
+            switch result {
+            case .failure(error: let error):
+                self?.finishDeviceRegistration(.failure(error: error))
+            case .success(result: _):
+                self?.finishDeviceRegistration(.success(result: true))
+            }
         }
     }
 
-    private func finishDeviceRegistration() {
+    private func finishDeviceRegistration(_ result: Result<Bool>) {
         registrationLock.lock()
         let waiters = registrationWaiters
         registrationWaiters.removeAll()
@@ -118,7 +129,7 @@ public class AuthzInteractor {
 
         DispatchQueue.main.async {
             for waiter in waiters {
-                waiter()
+                waiter(result)
             }
         }
     }
