@@ -93,15 +93,18 @@ public class SessionManager {
         return String(trimmed.prefix(limit)) + "…"
     }
 
-    /// Shorten long auth/proof headers so console stays readable.
+    /// Shorten long values; always redact sensitive auth/proof headers regardless of length.
     private static func truncatedHeaderValue(_ name: String, _ value: String, limit: Int = 96) -> String {
         let lower = name.lowercased()
-        let shouldTruncate = lower == "dpop"
+        let isSensitive = lower == "dpop"
             || lower == "authorization"
             || lower == "cookie"
-            || value.count > limit
-        guard shouldTruncate, value.count > limit else { return value }
-        return String(value.prefix(limit)) + "… (\(value.count) chars)"
+        guard value.count > limit || isSensitive else { return value }
+        let previewLimit = isSensitive ? min(limit, 24) : limit
+        if value.count <= previewLimit {
+            return "<redacted \(lower), \(value.count) chars>"
+        }
+        return String(value.prefix(previewLimit)) + "… (\(value.count) chars)"
     }
 
     private static func prettyJSONObject(_ object: Any) -> String {
@@ -110,7 +113,7 @@ public class SessionManager {
               let text = String(data: data, encoding: .utf8) else {
             return truncatedBodyPreview(String(describing: object))
         }
-        return text.replacingOccurrences(of: "\n", with: "\n    ")
+        return truncatedBodyPreview(text.replacingOccurrences(of: "\n", with: "\n    "))
     }
 
     private static func prettyJSONString(_ body: String) -> String {
