@@ -95,6 +95,7 @@ fileprivate final class CidaasMFAAuthenticationSession {
     var cachedExchangeId: String?
     var cachedRequestId: String?
     var cachedUsageType: String?
+    var cachedStatusId: String?
 
     func storeInitiation(
         sub: String,
@@ -106,10 +107,16 @@ fileprivate final class CidaasMFAAuthenticationSession {
         cachedExchangeId = exchangeId
         cachedRequestId = requestId
         cachedUsageType = usageType
+        cachedStatusId = nil
     }
 
     func updateExchangeId(_ exchangeId: String) {
         if !exchangeId.isEmpty { cachedExchangeId = exchangeId }
+    }
+
+    func storeVerification(sub: String, statusId: String) {
+        if !sub.isEmpty { cachedSub = sub }
+        if !statusId.isEmpty { cachedStatusId = statusId }
     }
 }
 
@@ -447,8 +454,62 @@ public final class CidaasMFAAuthenticationBuilder {
             photo: photo,
             voice: Data(),
             incomingData: auth
-        ) { result in
+        ) { [self] result in
+            if case .success(result: let response) = result, response.success {
+                session.storeVerification(sub: response.data.sub, statusId: response.data.status_id)
+            }
             MFA.onMain { completion(result) }
+        }
+    }
+
+    /// Completes authentication: `POST /login-srv/verification/sdk/login`, then exchanges the authorization `code` for tokens.
+    /// Call after a successful `verification()`. Pass `authenticateResponse` when available.
+    public func continueLogin(
+        authenticateResponse: AuthenticateResponse? = nil,
+        requestId: String? = nil,
+        sub: String? = nil,
+        completion: @escaping (Result<LoginResponseEntity>) -> Void
+    ) {
+        let resolvedStatusId = (authenticateResponse?.data.status_id
+            ?? session.cachedStatusId
+            ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let responseSub = (authenticateResponse?.data.sub ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let explicitSub = (sub ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedSub = !responseSub.isEmpty
+            ? responseSub
+            : (!explicitSub.isEmpty ? explicitSub : (session.cachedSub ?? ""))
+        let resolvedRequestId = (requestId ?? session.cachedRequestId ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !resolvedStatusId.isEmpty, !resolvedSub.isEmpty, !resolvedRequestId.isEmpty else {
+            MFA.fail(
+                "status_id, sub, and requestId are required after verification",
+                completion: completion
+            )
+            return
+        }
+
+        let req = PasswordlessRequest()
+        req.sub = resolvedSub
+        req.requestId = resolvedRequestId
+        req.status_id = resolvedStatusId
+        req.verificationType = verificationType
+        req.device_id = MFA.deviceId()
+        req.push_id = MFA.pushId()
+
+        VerificationInteractor.shared.passwordlessContinue(incomingData: req) { result in
+            switch result {
+            case .failure(error: let error):
+                MFA.onMain { completion(.failure(error: error)) }
+            case .success(result: let authz):
+                let code = authz.data.code.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !code.isEmpty else {
+                    MFA.fail("login continue returned empty authorization code", completion: completion)
+                    return
+                }
+                AccessTokenController.shared.getAccessToken(code: code) { tokenResult in
+                    MFA.onMain { completion(tokenResult) }
+                }
+            }
         }
     }
 
@@ -658,13 +719,24 @@ public final class CidaasMFASupportBuilder {
         }
     }
 
-    public func passwordlessContinue(
+    /// `POST /login-srv/verification/sdk/login` — returns an authorization `code` only.
+    /// Prefer `authentication().continueLogin(...)` when tokens are required.
+    public func continueLogin(
         incomingData: PasswordlessRequest,
         completion: @escaping (Result<AuthzCodeResponse>) -> Void
     ) {
         VerificationInteractor.shared.passwordlessContinue(incomingData: incomingData) { result in
             MFA.onMain { completion(result) }
         }
+    }
+
+    /// - Important: Renamed to ``continueLogin(incomingData:completion:)``. Kept for source compatibility.
+    @available(*, deprecated, renamed: "continueLogin(incomingData:completion:)")
+    public func passwordlessContinue(
+        incomingData: PasswordlessRequest,
+        completion: @escaping (Result<AuthzCodeResponse>) -> Void
+    ) {
+        continueLogin(incomingData: incomingData, completion: completion)
     }
 
     public func timeline(

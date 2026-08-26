@@ -348,28 +348,74 @@ public class VerificationPresenter {
     }
     
     public func passwordlessContinue(passwordlessContinueResponse: String?, errorResponse: WebAuthError?, callback: @escaping (Result<AuthzCodeResponse>) -> Void) {
-        if errorResponse != nil {
-            logw(errorResponse!.errorMessage, cname: "cidaas-sdk-verification-error-log")
-            callback(Result.failure(error: errorResponse!))
+        if let errorResponse {
+            logw(errorResponse.errorMessage, cname: "cidaas-sdk-verification-error-log")
+            callback(Result.failure(error: errorResponse))
+            return
         }
-        else {
-            let decoder = JSONDecoder()
-            do {
-                let data = passwordlessContinueResponse!.data(using: .utf8)!
-                // decode the json data to object
-                let passwordlessResp = try decoder.decode(AuthzCodeResponse.self, from: data)
-                
-                logw(passwordlessContinueResponse ?? "Empty response string", cname: "cidaas-sdk-verification-success-log")
-                // return success
-                callback(Result.success(result: passwordlessResp))
-            }
-            catch(let error) {
-                // return failure
-                logw("\(String(describing: error)) JSON parsing issue, Response: \(String(describing: passwordlessContinueResponse))", cname: "cidaas-sdk-verification-error-log")
-                callback(Result.failure(error: WebAuthError.shared.serviceFailureException(errorCode: 400, errorMessage: error.localizedDescription, statusCode: 400)))
-            }
+
+        guard let raw = passwordlessContinueResponse?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            callback(Result.failure(error: WebAuthError.shared.serviceFailureException(
+                errorCode: 400,
+                errorMessage: "Empty login continue response",
+                statusCode: 400
+            )))
+            return
         }
+        guard let code = Self.authorizationCode(from: raw), !code.isEmpty else {
+            logw("Authorization code missing in login continue response", cname: "cidaas-sdk-verification-error-log")
+            callback(Result.failure(error: WebAuthError.shared.serviceFailureException(
+                errorCode: 400,
+                errorMessage: "Authorization code missing in login continue response",
+                statusCode: 400
+            )))
+            return
+        }
+
+        let passwordlessResp = AuthzCodeResponse()
+        passwordlessResp.success = true
+        passwordlessResp.status = 200
+        passwordlessResp.data.code = code
+        logw("Login continue authorization code resolved", cname: "cidaas-sdk-verification-success-log")
+        callback(Result.success(result: passwordlessResp))
     }
+
+    /// Resolves OAuth `code` from JSON (`data.code`), a redirect URL query, or plain-text redirect body.
+    fileprivate static func authorizationCode(from raw: String) -> String? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+            guard let data = trimmed.data(using: .utf8) else { return nil }
+            do {
+                let resp = try JSONDecoder().decode(AuthzCodeResponse.self, from: data)
+                let code = resp.data.code.trimmingCharacters(in: .whitespacesAndNewlines)
+                return code.isEmpty ? nil : code
+            } catch {
+                logw(
+                    "Login continue JSON decode failed: \(error.localizedDescription)",
+                    cname: "cidaas-sdk-verification-error-log"
+                )
+                return nil
+            }
+        }
+        if let url = URL(string: trimmed),
+           let code = url.valueOf("code")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !code.isEmpty {
+            return code.removingPercentEncoding ?? code
+        }
+        let range = NSRange(trimmed.startIndex..<trimmed.endIndex, in: trimmed)
+        guard let match = authorizationCodeRegex.firstMatch(in: trimmed, range: range),
+              let codeRange = Range(match.range(at: 1), in: trimmed) else {
+            return nil
+        }
+        let code = String(trimmed[codeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { return nil }
+        return code.removingPercentEncoding ?? code
+    }
+
+    private static let authorizationCodeRegex: NSRegularExpression = {
+        // Pattern is fixed; force-try is safe for this constant.
+        try! NSRegularExpression(pattern: #"[?&]code=([^&\s\"'<>]+)"#)
+    }()
     
     public func login(loginResponse: String?, errorResponse: WebAuthError?, callback: @escaping (Result<LoginResponse>) -> Void) {
         if errorResponse != nil {
