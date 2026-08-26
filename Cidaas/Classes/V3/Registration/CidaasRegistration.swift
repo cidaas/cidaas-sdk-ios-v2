@@ -96,38 +96,6 @@ public final class CidaasNativeRegistrationBuilder {
         }
     }
 
-    /// Completes login after account verification: `POST /login-srv/login/handle/afterregister/{trackId}` → 302 `Location` with OAuth `code` → token exchange.
-    public func loginAfterRegister(
-        trackId: String,
-        completion: @escaping (Result<LoginResponseEntity>) -> Void
-    ) {
-        let trimmed = trackId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
-                errorCode: 417, errorMessage: "trackId is required", statusCode: 417
-            )), to: completion)
-            return
-        }
-        CidaasNative.shared.loginAfterRegister(trackId: trimmed) { result in
-            CidaasV3Callback.deliver(result, to: completion)
-        }
-    }
-
-    /// Async variant of ``loginAfterRegister(trackId:completion:)``.
-    @available(iOS 13.0, *)
-    public func loginAfterRegister(trackId: String) async throws -> LoginResponseEntity {
-        try await withCheckedThrowingContinuation { continuation in
-            loginAfterRegister(trackId: trackId) { result in
-                switch result {
-                case .success(result: let value):
-                    continuation.resume(returning: value)
-                case .failure(error: let error):
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-
     /// Fetches OAuth `request_id`, then registers the user.
     public func register(
         acceptLanguage: String = "en-us",

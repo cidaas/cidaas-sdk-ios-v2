@@ -7,7 +7,7 @@ import Foundation
 
 extension Cidaas {
 
-    /// User account APIs (userinfo, password reset, change/set password, account verification).
+    /// User account APIs (userinfo, password reset, change/set password, account verification, login after register).
     public func users() -> CidaasUsersBuilder {
         CidaasUsersBuilder()
     }

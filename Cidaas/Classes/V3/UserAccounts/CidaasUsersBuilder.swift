@@ -133,6 +133,39 @@ public final class CidaasUsersBuilder {
         }
     }
 
+    /// Completes login after account verification: `POST /login-srv/login/handle/afterregister/{trackId}` → 302 `Location` with OAuth `code` → token exchange.
+    /// Token exchange follows global `Cidaas.ENABLE_DPOP` (same as browser login).
+    public func loginAfterRegister(
+        trackId: String,
+        completion: @escaping (Result<LoginResponseEntity>) -> Void
+    ) {
+        let trimmed = trackId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            CidaasV3Callback.deliver(.failure(error: WebAuthError.shared.serviceFailureException(
+                errorCode: 417, errorMessage: "trackId is required", statusCode: 417
+            )), to: completion)
+            return
+        }
+        CidaasNative.shared.loginAfterRegister(trackId: trimmed) { result in
+            CidaasV3Callback.deliver(result, to: completion)
+        }
+    }
+
+    /// Async variant of ``loginAfterRegister(trackId:completion:)``.
+    @available(iOS 13.0, *)
+    public func loginAfterRegister(trackId: String) async throws -> LoginResponseEntity {
+        try await withCheckedThrowingContinuation { continuation in
+            loginAfterRegister(trackId: trackId) { result in
+                switch result {
+                case .success(result: let value):
+                    continuation.resume(returning: value)
+                case .failure(error: let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     public func fetchUserInfo(sub: String, completion: @escaping (Result<UserInfoEntity>) -> Void) {
         Cidaas.shared.getUserInfo(sub: sub, callback: completion)
     }
