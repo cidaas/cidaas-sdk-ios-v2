@@ -26,6 +26,7 @@ public enum JwksClient {
     private static var cache: CachedJwks?
     private static var refreshScheduled = false
     private static let fetchQueue = DispatchQueue(label: "com.cidaas.jwks-fetch", qos: .utility)
+    private static let responseQueue = DispatchQueue(label: "com.cidaas.jwks-response", qos: .utility)
 
     /// Test hook that returns JWKS JSON without performing HTTP.
     static var fetchOverride: ((String) throws -> String)?
@@ -160,13 +161,14 @@ public enum JwksClient {
         let url = baseUrl + "/.well-known/jwks.json"
         logw("Fetching JWKS \(url)", cname: "cidaas-sdk-jwks-log")
 
+        let alamofireSession = SessionManager.shared.currentSession()
         let semaphore = DispatchSemaphore(value: 0)
         var resultBody: String?
         var resultError: Error?
 
-        SessionManager.shared.session.request(url, method: .get)
+        alamofireSession.request(url, method: .get)
             .validate(statusCode: 200 ..< 300)
-            .responseString { response in
+            .responseString(queue: responseQueue) { response in
                 switch response.result {
                 case .success(let body):
                     let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)

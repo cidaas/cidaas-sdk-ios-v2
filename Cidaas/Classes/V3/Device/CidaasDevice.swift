@@ -454,7 +454,8 @@ public final class CidaasDevice {
 
     private func persistDeviceId(_ deviceId: String) {
         SDKDeviceIdResolver.persist(deviceId)
-        Cidaas.shared.deviceInfo.deviceId = SDKDeviceIdResolver.resolve()
+        SessionManager.shared.refreshDeviceIdFromStorage()
+        Cidaas.shared.deviceInfo.deviceId = SessionManager.shared.deviceInfo.deviceId
         Cidaas.shared.isDeviceRegistrationCompleted = true
     }
 

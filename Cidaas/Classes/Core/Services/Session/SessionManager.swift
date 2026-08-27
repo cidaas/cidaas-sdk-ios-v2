@@ -22,10 +22,24 @@ public class SessionManager {
 
     public init() {
         deviceInfo = DBHelper.shared.getDeviceInfo()
-        deviceInfo.deviceId = SDKDeviceIdResolver.resolve()
         push_id = DBHelper.shared.getFCM()
         headers = Self.makeDefaultHeaders(deviceInfo: deviceInfo)
         session = Self.makeSession(headers: headers, pinningOptions: nil)
+        refreshDeviceIdFromStorage()
+    }
+
+    /// Thread-safe snapshot of the current Alamofire session (replaced when pinning changes).
+    func currentSession() -> Session {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        return session
+    }
+
+    /// Re-reads the canonical device id (UserDefaults / Keychain migration) into headers and `deviceInfo`.
+    func refreshDeviceIdFromStorage() {
+        let resolvedDeviceId = SDKDeviceIdResolver.resolve()
+        deviceInfo.deviceId = resolvedDeviceId
+        headers["deviceId"] = resolvedDeviceId
     }
 
     func setPublicKeyPinning(_ options: CidaasPublicKeyPinningOptions?) {
@@ -177,11 +191,8 @@ public class SessionManager {
     ) {
         
         var bodyParams = parameters
-        
-        let resolvedDeviceId = SDKDeviceIdResolver.resolve()
-        deviceInfo.deviceId = resolvedDeviceId
-        headers["deviceId"] = resolvedDeviceId
-        
+        let resolvedDeviceId = deviceInfo.deviceId
+
         // assign device_id value if it is empty
         if bodyParams != nil && (bodyParams?["device_id"] as? String == "") {
             bodyParams!["device_id"] = resolvedDeviceId
@@ -227,7 +238,7 @@ public class SessionManager {
             $0.caseInsensitiveCompare("Cookie") == .orderedSame
         }
 
-        session.request(
+        currentSession().request(
             url,
             method: method,
             parameters: bodyParams,
@@ -362,7 +373,7 @@ public class SessionManager {
             headers: HTTPHeaders(urlReq.allHTTPHeaderFields ?? [:]),
             bodyParams: parameters as [String: Any]
         )
-        session.upload(multipartFormData: { multipartFormData in
+        currentSession().upload(multipartFormData: { multipartFormData in
             for (key, value) in parameters {
                 guard let data = value.data(using: .utf8) else { continue }
                 multipartFormData.append(data, withName: key)
@@ -383,7 +394,7 @@ public class SessionManager {
             headers: HTTPHeaders(urlReq.allHTTPHeaderFields ?? [:]),
             bodyParams: parameters as [String: Any]
         )
-        session.upload(multipartFormData: { multipartFormData in
+        currentSession().upload(multipartFormData: { multipartFormData in
             for (key, value) in parameters {
                 multipartFormData.append(value.data(using: .utf8)!, withName: key)
             }
