@@ -8,7 +8,7 @@
 
 import Foundation
 
-public class WebAuthError : Error, OauthExceptionDelegate {
+public class WebAuthError : Error, LocalizedError, CustomStringConvertible, OauthExceptionDelegate {
     
     // shared Instance
     public static var shared : WebAuthError = WebAuthError()
@@ -18,6 +18,16 @@ public class WebAuthError : Error, OauthExceptionDelegate {
     public var statusCode : Int = HttpStatusCode.DEFAULT.rawValue
     public var errorMessage : String = StringsHelper.shared.DEFAULT
     public var error: ErrorResponseEntity = ErrorResponseEntity()
+
+    /// Prefer `errorMessage` so hosts/demos using `localizedDescription`.
+    public var errorDescription: String? {
+        let trimmed = errorMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    public var description: String {
+        errorDescription ?? "WebAuthError(statusCode: \(statusCode))"
+    }
     
     // file not found exception
     public func fileNotFoundException() -> WebAuthError {

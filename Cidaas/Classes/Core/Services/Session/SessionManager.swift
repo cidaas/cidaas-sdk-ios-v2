@@ -47,12 +47,27 @@ public class SessionManager {
         return headers
     }
 
-    private static func logNetworkRequest(url: String, headers: HTTPHeaders, bodyParams: [String: Any]?) {
+    private static let networkLogSeparator = String(repeating: "─", count: 56)
+
+    private static func logNetworkRequest(
+        url: String,
+        method: String,
+        headers: HTTPHeaders,
+        bodyParams: [String: Any]?
+    ) {
         guard DBHelper.shared.getEnableLog() else { return }
-        logw("HTTP \(url)", cname: "cidaas-sdk-network-log")
-        logw("Headers: \(headers)", cname: "cidaas-sdk-network-log")
+        let cname = "cidaas-sdk-network-log"
+        logw(networkLogSeparator, cname: cname)
+        logw("→ REQUEST  \(method.uppercased()) \(url)", cname: cname)
+        logw("  Headers:", cname: cname)
+        for header in headers {
+            logw("    \(header.name): \(truncatedHeaderValue(header.name, header.value))", cname: cname)
+        }
         if let bodyParams {
-            logw("Payload: \(bodyParams)", cname: "cidaas-sdk-network-log")
+            logw("  Body:", cname: cname)
+            logw("    \(prettyJSONObject(bodyParams))", cname: cname)
+        } else {
+            logw("  Body: <none>", cname: cname)
         }
     }
 
@@ -78,26 +93,64 @@ public class SessionManager {
         return String(trimmed.prefix(limit)) + "…"
     }
 
+    /// Shorten long values; always redact sensitive auth/proof headers regardless of length.
+    private static func truncatedHeaderValue(_ name: String, _ value: String, limit: Int = 96) -> String {
+        let lower = name.lowercased()
+        let isSensitive = lower == "dpop"
+            || lower == "authorization"
+            || lower == "cookie"
+        guard value.count > limit || isSensitive else { return value }
+        let previewLimit = isSensitive ? min(limit, 24) : limit
+        if value.count <= previewLimit {
+            return "<redacted \(lower), \(value.count) chars>"
+        }
+        return String(value.prefix(previewLimit)) + "… (\(value.count) chars)"
+    }
+
+    private static func prettyJSONObject(_ object: Any) -> String {
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
+              let text = String(data: data, encoding: .utf8) else {
+            return truncatedBodyPreview(String(describing: object))
+        }
+        return truncatedBodyPreview(text.replacingOccurrences(of: "\n", with: "\n    "))
+    }
+
+    private static func prettyJSONString(_ body: String) -> String {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              JSONSerialization.isValidJSONObject(object),
+              let pretty = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
+              let text = String(data: pretty, encoding: .utf8) else {
+            return truncatedBodyPreview(trimmed)
+        }
+        return truncatedBodyPreview(text.replacingOccurrences(of: "\n", with: "\n    "))
+    }
+
     private static func logNetworkResponse(_ response: AFDataResponse<String>) {
         guard DBHelper.shared.getEnableLog() else { return }
+        let cname = "cidaas-sdk-network-log"
         let url = response.request?.url?.absoluteString ?? "<unknown url>"
+        let method = response.request?.httpMethod ?? "—"
         let status = response.response.map { String($0.statusCode) } ?? "—"
-        let refNumber = responseRefNumber(from: response.response)
-        if let refNumber {
-            logw("HTTP \(status) \(url) | x_ref_number=\(refNumber)", cname: "cidaas-sdk-network-log")
-        } else {
-            logw("HTTP \(status) \(url) | x_ref_number=<missing>", cname: "cidaas-sdk-network-log")
-        }
+        let refNumber = responseRefNumber(from: response.response) ?? "<missing>"
+        logw("← RESPONSE \(status) \(method) \(url)", cname: cname)
+        logw("  x_ref_number: \(refNumber)", cname: cname)
         switch response.result {
         case .success(let body):
-            logw("Response body: \(truncatedBodyPreview(body))", cname: "cidaas-sdk-network-log")
+            logw("  Body:", cname: cname)
+            logw("    \(prettyJSONString(body))", cname: cname)
         case .failure(let error):
-            logw("Response error: \(error.localizedDescription)", cname: "cidaas-sdk-network-log")
+            logw("  Error: \(error.localizedDescription)", cname: cname)
             if let data = response.data, !data.isEmpty {
                 let body = String(decoding: data, as: UTF8.self)
-                logw("Response body: \(truncatedBodyPreview(body))", cname: "cidaas-sdk-network-log")
+                logw("  Body:", cname: cname)
+                logw("    \(prettyJSONString(body))", cname: cname)
             }
         }
+        logw(networkLogSeparator, cname: cname)
+        logw("", cname: cname)
     }
 
     private static func makeSession(
@@ -157,7 +210,12 @@ public class SessionManager {
             requestHeaders["Accept-Language"] = locale
         }
 
-        Self.logNetworkRequest(url: url, headers: requestHeaders, bodyParams: bodyParams)
+        Self.logNetworkRequest(
+            url: url,
+            method: method.rawValue,
+            headers: requestHeaders,
+            bodyParams: bodyParams
+        )
 
         // Manual `Cookie` headers must not compete with URLSession cookie storage.
         let hasManualCookie = extraheaders.keys.contains {
@@ -295,6 +353,7 @@ public class SessionManager {
         var urlReq = preparedUploadRequest(from: url)
         Self.logNetworkRequest(
             url: urlReq.url?.absoluteString ?? "",
+            method: urlReq.httpMethod ?? "POST",
             headers: HTTPHeaders(urlReq.allHTTPHeaderFields ?? [:]),
             bodyParams: parameters as [String: Any]
         )
@@ -315,6 +374,7 @@ public class SessionManager {
         var urlReq = preparedUploadRequest(from: url)
         Self.logNetworkRequest(
             url: urlReq.url?.absoluteString ?? "",
+            method: urlReq.httpMethod ?? "POST",
             headers: HTTPHeaders(urlReq.allHTTPHeaderFields ?? [:]),
             bodyParams: parameters as [String: Any]
         )
