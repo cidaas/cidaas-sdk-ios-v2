@@ -39,6 +39,22 @@ public class SetPasswordServiceWorker {
             return
         }
 
+        // Encrypt sensitive fields when client-side encryption is enabled.
+        do {
+            try ClientSideEncryption.encryptFieldsInBody(
+                &bodyParams,
+                fieldNames: ["password", "confirmPassword"],
+                baseUrlOverride: baseURL
+            )
+        } catch {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: error.localizedDescription,
+                statusCode: 417
+            ))
+            return
+        }
+
         var headers: [String: String] = [:]
         headers["access_token"] = access_token
 

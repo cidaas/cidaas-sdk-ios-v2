@@ -125,12 +125,33 @@ public class Cidaas {
             performDefaultValidation: performDefaultValidation
         )
         SessionManager.shared.setPublicKeyPinning(options)
+        JwksClient.clearCache()
         logw("Public key pinning enabled: \(hosts.joined(separator: ", "))", cname: "cidaas-sdk-info-log")
     }
 
     public func clearPublicKeyPinning() {
         SessionManager.shared.setPublicKeyPinning(nil)
+        JwksClient.clearCache()
         logw("Public key pinning disabled", cname: "cidaas-sdk-info-log")
+    }
+
+    /// Enables or disables JWE encryption of sensitive fields (`password`, `pass_code`, and similar)
+    /// before they are sent to cidaas APIs.
+    ///
+    /// Default is `false` for backward compatibility. When set to `true`, the SDK warms the JWKS
+    /// cache in the background. Call this early at app startup so encryption does not run against
+    /// an empty cache on the main thread.
+    public func setEncryptionEnabled(_ encryptionEnabled: Bool) {
+        Privacy.setEncryptionEnabled(encryptionEnabled)
+        if encryptionEnabled {
+            JwksClient.prefetchAsync()
+        }
+        logw("Client-side encryption enabled=\(encryptionEnabled)", cname: "cidaas-sdk-info-log")
+    }
+
+    /// Whether client-side encryption of sensitive fields is currently enabled.
+    public func isEncryptionEnabled() -> Bool {
+        Privacy.isEncryptionEnabled()
     }
 
     private static func resolvePinnedHosts(explicit: [String]?) -> [String] {
@@ -151,7 +172,7 @@ public class Cidaas {
     public init(storage : TransactionStore = TransactionStore.shared) {
         // set device info in local
         deviceInfo = DeviceInfoModel()
-        deviceInfo.deviceId = SDKDeviceIdResolver.resolve(persistToDBHelper: false)
+        deviceInfo.deviceId = SDKDeviceIdResolver.resolve()
         logw("Device Id : " + deviceInfo.deviceId, cname: "cidaas-sdk-info-log")
         deviceInfo.deviceMake = "Apple"
         let deviceHelper = DeviceHelper()
@@ -216,6 +237,7 @@ public class Cidaas {
     
     // set url manually
     public func setURL(domainURL: String, clientId: String, redirectURL: String, userDeviceId: String = "") {
+        JwksClient.clearCache()
         FileHelper.shared.paramsToDictionaryConverter(domainURL: domainURL, clientId: clientId, redirectURL: redirectURL) {
             switch $0 {
             case .failure(let error):
@@ -244,6 +266,9 @@ public class Cidaas {
                         
                         if userDeviceId != "" {
                             DBHelper.shared.setUserDeviceId(userDeviceId: userDeviceId, key: properties["DomainURL"] ?? "")
+                        }
+                        if Privacy.isEncryptionEnabled() {
+                            JwksClient.prefetchAsync(baseUrlOverride: properties["DomainURL"])
                         }
                         
                         break

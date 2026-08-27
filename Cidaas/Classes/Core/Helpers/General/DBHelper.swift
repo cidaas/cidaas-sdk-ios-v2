@@ -100,6 +100,11 @@ public class DBHelper : NSObject {
     
     // set property file
     public func setPropertyFile(properties : Dictionary<String, String>?, key : String = "OAuthProperty") {
+        let previousDomain = (userDefaults.object(forKey: key) as? Dictionary<String, String>)?["DomainURL"]
+        let newDomain = properties?["DomainURL"]
+        if previousDomain != newDomain {
+            JwksClient.clearCache()
+        }
         userDefaults.set(properties, forKey: key)
         userDefaults.synchronize()
     }

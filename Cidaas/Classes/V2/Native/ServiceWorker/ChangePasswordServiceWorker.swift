@@ -45,6 +45,22 @@ public class ChangePasswordServiceWorker {
             callback(nil, WebAuthError.shared.propertyMissingException())
             return
         }
+
+        // Encrypt sensitive fields when client-side encryption is enabled.
+        do {
+            try ClientSideEncryption.encryptFieldsInBody(
+                &bodyParams,
+                fieldNames: ["old_password", "new_password", "confirm_password"],
+                baseUrlOverride: baseURL
+            )
+        } catch {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: error.localizedDescription,
+                statusCode: 417
+            ))
+            return
+        }
         
         var headers: [String: String] = [String: String]()
         headers["access_token"] = access_token

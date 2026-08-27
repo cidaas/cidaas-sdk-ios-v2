@@ -11,7 +11,7 @@ enum SDKDeviceIdResolver {
 
     private static let keychainKey = "cidaas_sdk_device_id"
 
-    /// Stable device id (UserDefaults → Keychain → vendor id). Always lowercase.
+    /// Stable device id (UserDefaults → Keychain → vendor id). Always uppercase.
     static func resolve(persistToDBHelper: Bool = true) -> String {
         var info = DBHelper.shared.getDeviceInfo()
         let stored = normalize(info.deviceId)
@@ -49,7 +49,7 @@ enum SDKDeviceIdResolver {
         return generated
     }
 
-    /// Writes a lowercase device id to UserDefaults + Keychain.
+    /// Writes an uppercase device id to UserDefaults + Keychain.
     static func persist(_ deviceId: String) {
         let normalized = normalize(deviceId)
         guard !normalized.isEmpty else { return }
@@ -67,6 +67,6 @@ enum SDKDeviceIdResolver {
     }
 
     private static func normalize(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        value.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
     }
 }

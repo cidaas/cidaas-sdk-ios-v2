@@ -22,6 +22,7 @@ public class SessionManager {
 
     public init() {
         deviceInfo = DBHelper.shared.getDeviceInfo()
+        deviceInfo.deviceId = SDKDeviceIdResolver.resolve()
         push_id = DBHelper.shared.getFCM()
         headers = Self.makeDefaultHeaders(deviceInfo: deviceInfo)
         session = Self.makeSession(headers: headers, pinningOptions: nil)
@@ -177,9 +178,13 @@ public class SessionManager {
         
         var bodyParams = parameters
         
+        let resolvedDeviceId = SDKDeviceIdResolver.resolve()
+        deviceInfo.deviceId = resolvedDeviceId
+        headers["deviceId"] = resolvedDeviceId
+        
         // assign device_id value if it is empty
         if bodyParams != nil && (bodyParams?["device_id"] as? String == "") {
-            bodyParams!["device_id"] = deviceInfo.deviceId
+            bodyParams!["device_id"] = resolvedDeviceId
         }
         
         // assign push_id value if it is empty

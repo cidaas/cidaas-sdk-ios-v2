@@ -21,8 +21,8 @@ public extension String {
                    return "Invalid iv"
                }
 
-        let aes = try AES(key: keyData.byteArray, blockMode: GCM(iv: ivData.byteArray, mode: .combined), padding: .noPadding)
-        let encrypted = try aes.encrypt(data.byteArray)
+        let aes = try AES(key: Array(keyData), blockMode: GCM(iv: Array(ivData), mode: .combined), padding: .noPadding)
+        let encrypted = try aes.encrypt(Array(data))
         let encryptedData = Data(encrypted)
         return encryptedData.base64EncodedString()
     }
@@ -36,7 +36,7 @@ public extension String {
             guard let ivData = iv.data(using: .utf8) else {
                        return "Invalid iv"
                    }
-            let aes = try AES(key: keyData.byteArray, blockMode: GCM(iv: ivData.byteArray, mode: .combined), padding: .noPadding)
+            let aes = try AES(key: Array(keyData), blockMode: GCM(iv: Array(ivData), mode: .combined), padding: .noPadding)
             let decrypted = try aes.decrypt([UInt8](data))
             let decryptedData = Data(decrypted)
 

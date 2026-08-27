@@ -93,6 +93,22 @@ public class VerificationServiceWorker {
             callback(nil, WebAuthError.shared.conversionException())
             return
         }
+
+        // Encrypt sensitive fields when client-side encryption is enabled.
+        do {
+            try ClientSideEncryption.applyVerificationEncryption(
+                &bodyParamsDefault,
+                verificationType: verificationType,
+                baseUrlOverride: baseURL
+            )
+        } catch {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: error.localizedDescription,
+                statusCode: 417
+            ))
+            return
+        }
         
         // construct body params for FACE & VOICE
         var bodyParams = Dictionary<String, String>()
@@ -253,6 +269,22 @@ public class VerificationServiceWorker {
             return
         }
 
+        // Encrypt sensitive fields when client-side encryption is enabled.
+        do {
+            try ClientSideEncryption.applyVerificationEncryption(
+                &bodyParamsDefault,
+                verificationType: verificationType,
+                baseUrlOverride: baseURL
+            )
+        } catch {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: error.localizedDescription,
+                statusCode: 417
+            ))
+            return
+        }
+
         guard let cookieHeaders = SDKDeviceIdResolver.cidaasDrCookieHeaders() else {
             callback(nil, WebAuthError.shared.serviceFailureException(
                 errorCode: 417,
@@ -314,11 +346,8 @@ public class VerificationServiceWorker {
         }
         
         
-        // construct device details
-        let deviceInfo = DBHelper.shared.getDeviceInfo()
-        
         // construct scanned url
-        urlString = baseURL + sharedURL.getDeleteAllURL(deviceId: deviceInfo.deviceId)
+        urlString = baseURL + sharedURL.getDeleteAllURL(deviceId: SDKDeviceIdResolver.resolve())
         
         sharedSession.startSession(url: urlString, method: .delete, parameters: bodyParams, callback: callback)
     }

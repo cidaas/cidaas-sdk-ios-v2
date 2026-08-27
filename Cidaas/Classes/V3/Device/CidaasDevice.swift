@@ -413,7 +413,7 @@ public final class CidaasDevice {
                         }
                         return
                     }
-                    let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !deviceId.isEmpty else {
                         let err = WebAuthError.shared.serviceFailureException(
                             errorCode: 400,
