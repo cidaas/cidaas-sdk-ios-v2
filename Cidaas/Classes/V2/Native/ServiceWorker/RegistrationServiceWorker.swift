@@ -66,6 +66,22 @@ public class RegistrationServiceWorker {
             callback(nil, WebAuthError.shared.propertyMissingException())
             return
         }
+
+        // Encrypt sensitive fields when client-side encryption is enabled.
+        do {
+            try ClientSideEncryption.encryptFieldsInBody(
+                &bodyParams,
+                fieldNames: ["password", "password_echo", "confirmPassword"],
+                baseUrlOverride: baseURL
+            )
+        } catch {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: error.localizedDescription,
+                statusCode: 417
+            ))
+            return
+        }
         
         var headers: [String: String] = [String: String]()
         headers["requestId"] = requestId

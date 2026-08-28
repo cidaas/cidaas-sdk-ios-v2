@@ -795,7 +795,7 @@ private enum MFA {
     }
 
     static func deviceId() -> String {
-        DBHelper.shared.getDeviceInfo().deviceId
+        SDKDeviceIdResolver.resolve()
     }
 
     static func validationError(_ message: String) -> WebAuthError {

@@ -25,6 +25,10 @@ let package = Package(
                 .product(name: "AnyCodable", package: "AnyCodable")
             ],
             path: "Cidaas/Classes",
-            swiftSettings: swiftSettings)
+            swiftSettings: swiftSettings),
+        .testTarget(
+            name: "CidaasTests",
+            dependencies: ["Cidaas"],
+            path: "Tests")
     ]
 )

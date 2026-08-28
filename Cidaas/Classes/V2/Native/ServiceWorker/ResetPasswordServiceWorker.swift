@@ -119,6 +119,22 @@ public class ResetPasswordServiceWorker {
             callback(nil, WebAuthError.shared.propertyMissingException())
             return
         }
+
+        // Encrypt sensitive fields when client-side encryption is enabled.
+        do {
+            try ClientSideEncryption.encryptFieldsInBody(
+                &bodyParams,
+                fieldNames: ["password", "confirmPassword"],
+                baseUrlOverride: baseURL
+            )
+        } catch {
+            callback(nil, WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: error.localizedDescription,
+                statusCode: 417
+            ))
+            return
+        }
         
         // construct url
         if ((properties["CidaasVersion"] != nil) && properties["CidaasVersion"] == "3") {

@@ -38,12 +38,10 @@ public final class CidaasDevice {
     ///
     /// - Parameters:
     ///   - clientId: OAuth client id.
-    ///   - pushId: FCM token; required when `includePlatformAttestation` is `true`.
     ///   - includePlatformAttestation: Collects App Attest / App Check when true; otherwise DPoP + biometric proof only.
     ///   - completion: Registered `device_id`, or an error.
     public func registerDevice(
         clientId: String,
-        pushId: String = "",
         includePlatformAttestation: Bool = false,
         completion: @escaping (Result<DeviceRegistrationVerifyResult>) -> Void
     ) {
@@ -61,11 +59,7 @@ public final class CidaasDevice {
             }
         }
 
-        startRegistration(
-            clientId: clientId,
-            pushId: pushId,
-            includePlatformAttestation: includePlatformAttestation
-        ) { initiateResult in
+        startRegistration(clientId: clientId) { initiateResult in
             switch initiateResult {
             case .failure(error: let error):
                 // 409 on initiate = already registered
@@ -89,13 +83,11 @@ public final class CidaasDevice {
     @available(iOS 13.0, *)
     public func registerDevice(
         clientId: String,
-        pushId: String = "",
         includePlatformAttestation: Bool = false
     ) async throws -> DeviceRegistrationVerifyResult {
         try await withCheckedThrowingContinuation { continuation in
             registerDevice(
                 clientId: clientId,
-                pushId: pushId,
                 includePlatformAttestation: includePlatformAttestation
             ) { result in
                 switch result {
@@ -110,8 +102,6 @@ public final class CidaasDevice {
 
     private func startRegistration(
         clientId: String,
-        pushId: String,
-        includePlatformAttestation: Bool,
         completion: @escaping (Result<DeviceRegistrationInitiateResult>) -> Void
     ) {
         let trimmedClientId = clientId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -122,22 +112,6 @@ public final class CidaasDevice {
                 completion(.failure(error: err))
             }
             return
-        }
-
-        let trimmedPushId = pushId.trimmingCharacters(in: .whitespacesAndNewlines)
-        if includePlatformAttestation {
-            guard !trimmedPushId.isEmpty else {
-                let err = WebAuthError.shared.propertyMissingException()
-                err.errorMessage = "push_id (FCM) is required when includePlatformAttestation is true."
-                DispatchQueue.main.async {
-                    completion(.failure(error: err))
-                }
-                return
-            }
-            DBHelper.shared.setFCM(fcmToken: trimmedPushId)
-        } else if !trimmedPushId.isEmpty {
-            // Cache locally only; omitted from initiate when includePlatformAttestation is false.
-            DBHelper.shared.setFCM(fcmToken: trimmedPushId)
         }
 
         let deviceId = SDKDeviceIdResolver.resolve()
@@ -159,15 +133,12 @@ public final class CidaasDevice {
         }
 
         let urlString = baseURL + VerificationURLHelper.shared.getDeviceRegistrationInitiationURL()
-        var bodyParams: [String: Any] = [
+        // push_id is not part of device-registration initiate.
+        let bodyParams: [String: Any] = [
             "client_id": trimmedClientId,
             "device_id": deviceId,
             "platform": "ios"
         ]
-        // push_id is sent only when the host opts into the platform-attestation path.
-        if includePlatformAttestation {
-            bodyParams["push_id"] = trimmedPushId
-        }
 
         SessionManager.shared.startSession(url: urlString, method: .post, parameters: bodyParams) { responseString, error in
             if let error {
@@ -413,7 +384,7 @@ public final class CidaasDevice {
                         }
                         return
                     }
-                    let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    let deviceId = payload.device_id.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !deviceId.isEmpty else {
                         let err = WebAuthError.shared.serviceFailureException(
                             errorCode: 400,
@@ -454,7 +425,8 @@ public final class CidaasDevice {
 
     private func persistDeviceId(_ deviceId: String) {
         SDKDeviceIdResolver.persist(deviceId)
-        Cidaas.shared.deviceInfo.deviceId = SDKDeviceIdResolver.resolve()
+        SessionManager.shared.refreshDeviceIdFromStorage()
+        Cidaas.shared.deviceInfo.deviceId = SessionManager.shared.deviceInfo.deviceId
         Cidaas.shared.isDeviceRegistrationCompleted = true
     }
 
