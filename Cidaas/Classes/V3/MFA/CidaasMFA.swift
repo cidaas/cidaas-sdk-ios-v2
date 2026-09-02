@@ -24,11 +24,6 @@ extension Cidaas {
     ) {
         mfa(type).enrollment().enrollmentSetup(accessToken: accessToken, sub: sub, completion: completion)
     }
-
-    /// Device MFA management APIs (history, pending push, FCM, unlink, etc.) — not tied to a verification type.
-    public func mfaSupport() -> CidaasMFASupportBuilder {
-        CidaasMFASupportBuilder(verificationType: "")
-    }
 }
 
 // MARK: - Public types
@@ -137,11 +132,6 @@ public final class CidaasMFABuilder {
 
     public func authentication() -> CidaasMFAAuthenticationBuilder {
         CidaasMFAAuthenticationBuilder(verificationType: verificationType, session: authenticationSession)
-    }
-
-    /// Device management, pending push auth, history, FCM update, and related support APIs.
-    public func support() -> CidaasMFASupportBuilder {
-        CidaasMFASupportBuilder(verificationType: verificationType)
     }
 }
 
@@ -644,137 +634,6 @@ public final class CidaasMFAAuthenticationBuilder {
     private func resolvedPushExchangeId(_ explicit: String?) -> String? {
         let value = explicit ?? session.cachedExchangeId ?? ""
         return value.isEmpty ? nil : value
-    }
-}
-
-// MARK: - Support (device MFA management, history, pending push)
-
-public final class CidaasMFASupportBuilder {
-
-    private let verificationType: String
-
-    fileprivate init(verificationType: String) {
-        self.verificationType = verificationType
-    }
-
-    /// Configured MFA methods for the user on this device (`sub` + current `device_id` / `push_id`).
-    public func configurations(sub: String, completion: @escaping (Result<MFAListResponse>) -> Void) {
-        let resolvedSub = sub.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !resolvedSub.isEmpty else {
-            MFA.fail("sub is required", completion: completion)
-            return
-        }
-        let req = MFAListRequest()
-        req.sub = resolvedSub
-        req.device_id = MFA.deviceId()
-        req.push_id = MFA.pushId()
-        VerificationViewController.shared.getConfiguredList(incomingData: req) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func deleteAll(
-        incomingData: DeleteRequest,
-        completion: @escaping (Result<DeleteResponse>) -> Void
-    ) {
-        VerificationViewController.shared.deleteAll(incomingData: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func delete(
-        incomingData: DeleteRequest,
-        completion: @escaping (Result<DeleteResponse>) -> Void
-    ) {
-        VerificationViewController.shared.delete(incomingData: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func pendingNotifications(
-        incomingData: PendingNotificationRequest,
-        completion: @escaping (Result<PendingNotificationResponse>) -> Void
-    ) {
-        VerificationViewController.shared.getPendingNotificationList(incomingData: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func history(
-        incomingData: MFAHistoryRequest,
-        completion: @escaping (Result<MFAHistoryResponse>) -> Void
-    ) {
-        VerificationViewController.shared.getMFAHistoryList(incomingData: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    /// Updates the device push token on the verification backend. 
-    public func updateFCMToken(
-        incomingData: UpdateFCMRequest,
-        completion: @escaping (Result<UpdateFCMResponse>) -> Void
-    ) {
-        VerificationViewController.shared.updateFCMToken(updateFCMRequest: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    /// `POST /login-srv/verification/sdk/login` — returns an authorization `code` only.
-    /// Prefer `authentication().continueLogin(...)` when tokens are required.
-    public func continueLogin(
-        incomingData: PasswordlessRequest,
-        completion: @escaping (Result<AuthzCodeResponse>) -> Void
-    ) {
-        VerificationInteractor.shared.passwordlessContinue(incomingData: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    /// - Important: Renamed to ``continueLogin(incomingData:completion:)``. Kept for source compatibility.
-    @available(*, deprecated, renamed: "continueLogin(incomingData:completion:)")
-    public func passwordlessContinue(
-        incomingData: PasswordlessRequest,
-        completion: @escaping (Result<AuthzCodeResponse>) -> Void
-    ) {
-        continueLogin(incomingData: incomingData, completion: completion)
-    }
-
-    public func timeline(
-        incomingData: TimeLineRequest,
-        completion: @escaping (Result<TimeLineDetailsResponse>) -> Void
-    ) {
-        VerificationViewController.shared.getTimeLineDetails(timeLineRequest: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func configuredDeviceList(
-        incomingData: MFAConfiguredDeviceListRequest,
-        completion: @escaping (Result<MFAConfiguredDeviceListResponse>) -> Void
-    ) {
-        VerificationViewController.shared.getMFAConfiguredDeviceList(
-            mfaConfiguredDeviceListRequest: incomingData
-        ) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func deleteDevice(
-        incomingData: DeleteDeviceRequest,
-        completion: @escaping (Result<DeleteResponse>) -> Void
-    ) {
-        VerificationViewController.shared.deleteDevice(deleteRequest: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func deviceConfiguredList(
-        incomingData: MFAListRequest,
-        completion: @escaping (Result<MFAListResponse>) -> Void
-    ) {
-        VerificationViewController.shared.getDeviceConfiguredList(mfaListRequest: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
     }
 }
 

@@ -346,8 +346,10 @@ public class VerificationServiceWorker {
         }
         
         
-        // construct scanned url
-        urlString = baseURL + sharedURL.getDeleteAllURL(deviceId: SDKDeviceIdResolver.resolve())
+        // Use request device_id in the path when present; otherwise the local device id.
+        let pathDeviceId = incomingData.device_id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let deviceIdForPath = pathDeviceId.isEmpty ? SDKDeviceIdResolver.resolve() : pathDeviceId
+        urlString = baseURL + sharedURL.getDeleteAllURL(deviceId: deviceIdForPath)
         
         sharedSession.startSession(url: urlString, method: .delete, parameters: bodyParams, callback: callback)
     }
