@@ -91,17 +91,20 @@ fileprivate final class CidaasMFAAuthenticationSession {
     var cachedRequestId: String?
     var cachedUsageType: String?
     var cachedStatusId: String?
+    var cachedSingleFactorAuth: Bool = false
 
     func storeInitiation(
         sub: String,
         exchangeId: String,
         requestId: String,
-        usageType: String
+        usageType: String,
+        singleFactorAuth: Bool
     ) {
         cachedSub = sub
         cachedExchangeId = exchangeId
         cachedRequestId = requestId
         cachedUsageType = usageType
+        cachedSingleFactorAuth = singleFactorAuth
         cachedStatusId = nil
     }
 
@@ -334,12 +337,14 @@ public final class CidaasMFAAuthenticationBuilder {
     /// Sends required `Cookie: cidaas_dr=<deviceId>` (same as authz `requestId`).
     /// - `INITIAL_AUTHENTICATION`: pass `identifier` (e.g. email); do not pass `sub`.
     /// - `MULTIFACTOR_AUTHENTICATION`: pass masked `sub` only (not the logged-in user's real sub).
+    /// - `singleFactorAuth`: set `true` for PATTERN / TOUCHID / FACE so initiation → verification skips push acknowledge/allow.
     public func initiation(
         requestId: String,
         usageType: String,
         sub: String = "",
         identifier: String = "",
         mediumId: String = "",
+        singleFactorAuth: Bool = false,
         completion: @escaping (Result<CidaasMFAAuthenticationInitiationResult>) -> Void
     ) {
         if let message = Self.validateInitiation(
@@ -360,6 +365,7 @@ public final class CidaasMFAAuthenticationBuilder {
         req.usage_type = usageType
         req.device_id = MFA.deviceId()
         req.push_id = MFA.pushId()
+        req.single_factor_auth = singleFactorAuth
 
         VerificationViewController.shared.initiate(verificationType: verificationType, incomingData: req) { [self] result in
             switch result {
@@ -378,7 +384,8 @@ public final class CidaasMFAAuthenticationBuilder {
                     sub: cachedSub,
                     exchangeId: exchangeId,
                     requestId: requestId,
-                    usageType: usageType
+                    usageType: usageType,
+                    singleFactorAuth: singleFactorAuth
                 )
                 let masked = resp.data.maskedSub.isEmpty ? nil : resp.data.maskedSub
                 let value = CidaasMFAAuthenticationInitiationResult(
@@ -394,6 +401,7 @@ public final class CidaasMFAAuthenticationBuilder {
     }
 
     /// Sends required `Cookie: cidaas_dr=<deviceId>` (same as authz `requestId`).
+    /// Pass `singleFactorAuth` when initiate used it (defaults to the value cached on this builder session).
     public func verification(
         exchangeId: String? = nil,
         otp: String? = nil,
@@ -402,6 +410,7 @@ public final class CidaasMFAAuthenticationBuilder {
         pushNumber: String? = nil,
         requestId: String? = nil,
         usageType: String? = nil,
+        singleFactorAuth: Bool? = nil,
         photo: UIImage = UIImage(),
         attempt: Int = 0,
         localizedReason: String = "Authenticate",
@@ -411,6 +420,7 @@ public final class CidaasMFAAuthenticationBuilder {
         let resolvedSub = session.cachedSub ?? ""
         let resolvedRequestId = requestId ?? session.cachedRequestId ?? ""
         let resolvedUsageType = usageType ?? session.cachedUsageType ?? ""
+        let resolvedSingleFactorAuth = singleFactorAuth ?? session.cachedSingleFactorAuth
         guard !resolvedExchange.isEmpty,
               !resolvedSub.isEmpty,
               !resolvedRequestId.isEmpty,
@@ -433,6 +443,7 @@ public final class CidaasMFAAuthenticationBuilder {
         auth.exchange_id = resolvedExchange
         auth.request_id = resolvedRequestId
         auth.usage_type = resolvedUsageType
+        auth.single_factor_auth = resolvedSingleFactorAuth
         auth.applyVerificationCredential(verificationType: verificationType, value: passCode)
         auth.attempt = attempt
         auth.localizedReason = localizedReason
