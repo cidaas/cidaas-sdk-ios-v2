@@ -10,10 +10,9 @@ import Foundation
 enum CidaasHTTPProofToken {
     private static let persistedBindingKey = "com.cidaas.sdk.dpop.bound"
 
-    /// Whether the global DPoP flag is on (iOS 14+).
+    /// Whether the global DPoP flag is on.
     static var isEnabled: Bool {
-        guard #available(iOS 14.0, *) else { return false }
-        return Cidaas.shared.ENABLE_DPOP
+        Cidaas.shared.ENABLE_DPOP
     }
 
     /// Last saved access token was DPoP-bound (`token_type` / `cnf.jkt`).
@@ -25,7 +24,6 @@ enum CidaasHTTPProofToken {
 
     /// Send a fresh `DPoP` proof when the global flag is on **or** the current session is DPoP-bound.
     static func shouldSendDpopHeader(for urlString: String) -> Bool {
-        guard #available(iOS 14.0, *) else { return false }
         guard !urlString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
         return isEnabled || hasPersistedDpopBinding
     }
