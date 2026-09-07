@@ -12,24 +12,24 @@ import Security
 enum CidaasSessionCookies {
 
     private static let service = "com.cidaas.sdk.session-cookies"
-    private static let sidName = "cidaas_sid"
-    private static let ssoName = "cidaas_sso"
+    private static let sidKey = "cidaas_sid"
+    private static let ssoKey = "cidaas_sso"
 
     private static let lock = NSLock()
     /// ponytail: hostless XCTest often gets Keychain -34018; memory keeps same-process reads working. Host apps use Keychain.
     private static var memoryFallback: [String: String] = [:]
 
-    static var sid: String { read(account: sidName) }
+    static var sid: String { read(account: sidKey) }
 
-    static var sso: String { read(account: ssoName) }
+    static var sso: String { read(account: ssoKey) }
 
     /// Writes non-nil, non-empty values. Pass `nil` to leave that cookie unchanged.
     static func persist(sid: String?, sso: String?) {
         if let sid, !trimmed(sid).isEmpty {
-            write(trimmed(sid), account: sidName)
+            write(trimmed(sid), account: sidKey)
         }
         if let sso, !trimmed(sso).isEmpty {
-            write(trimmed(sso), account: ssoName)
+            write(trimmed(sso), account: ssoKey)
         }
     }
 
@@ -41,13 +41,13 @@ enum CidaasSessionCookies {
             guard let name = key as? String,
                   name.lowercased() == "set-cookie" else { continue }
             let raw = (value as? String) ?? String(describing: value)
-            if let v = cookieValue(named: sidName, in: raw) { foundSid = v }
-            if let v = cookieValue(named: ssoName, in: raw) { foundSso = v }
+            if let v = cookieValue(named: sidKey, in: raw) { foundSid = v }
+            if let v = cookieValue(named: ssoKey, in: raw) { foundSso = v }
         }
         if let url, let jarCookies = HTTPCookieStorage.shared.cookies(for: url) {
             for cookie in jarCookies {
-                if cookie.name == sidName { foundSid = cookie.value }
-                if cookie.name == ssoName { foundSso = cookie.value }
+                if cookie.name == sidKey { foundSid = cookie.value }
+                if cookie.name == ssoKey { foundSso = cookie.value }
             }
         }
         persist(sid: foundSid, sso: foundSso)
@@ -59,8 +59,8 @@ enum CidaasSessionCookies {
     }
 
     static func clear() {
-        delete(account: sidName)
-        delete(account: ssoName)
+        delete(account: sidKey)
+        delete(account: ssoKey)
     }
 
     private static let drName = "cidaas_dr"
@@ -77,7 +77,7 @@ enum CidaasSessionCookies {
                 guard !trimmedPart.isEmpty else { continue }
                 let pieces = trimmedPart.split(separator: "=", maxSplits: 1).map(String.init)
                 let name = pieces.first?.lowercased() ?? ""
-                if name == sidName || name == ssoName { continue }
+                if name == sidKey || name == ssoKey { continue }
                 if name == drName {
                     existingDr = pieces.count > 1 ? pieces[1] : ""
                     continue
@@ -96,8 +96,8 @@ enum CidaasSessionCookies {
 
         var segments = otherSegments
         if !resolvedDr.isEmpty { segments.insert("\(drName)=\(resolvedDr)", at: 0) }
-        if !storedSid.isEmpty { segments.append("\(sidName)=\(storedSid)") }
-        if !storedSso.isEmpty { segments.append("\(ssoName)=\(storedSso)") }
+        if !storedSid.isEmpty { segments.append("\(sidKey)=\(storedSid)") }
+        if !storedSso.isEmpty { segments.append("\(ssoKey)=\(storedSso)") }
         guard !segments.isEmpty else { return nil }
         return segments.joined(separator: "; ")
     }
