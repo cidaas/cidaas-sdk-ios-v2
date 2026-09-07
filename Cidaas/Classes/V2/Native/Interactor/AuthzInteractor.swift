@@ -125,9 +125,13 @@ public class AuthzInteractor {
                 AccessTokenController.shared.getAccessToken(code: code) { tokenResult in
                     switch tokenResult {
                     case .failure(error: let tokenError):
+                     DispatchQueue.main.async {
                         callback(.failure(error: tokenError))
+                     }
                     case .success(result: let login):
+                     DispatchQueue.main.async {
                         callback(.success(result: .loggedIn(login)))
+                     }
                     }
                 }
             case .preloginTrack(let trackId, let requestId, let sub):
