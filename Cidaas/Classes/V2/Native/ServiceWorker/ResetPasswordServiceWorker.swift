@@ -80,12 +80,7 @@ public class ResetPasswordServiceWorker {
             return
         }
         
-        // construct url
-        if ((properties["CidaasVersion"] != nil) && properties["CidaasVersion"] == "3") {
-            urlString = baseURL + sharedURL.getHandleResetPasswordV3URL()
-        } else {
-            urlString = baseURL + sharedURL.getHandleResetPasswordURL()
-        }
+        urlString = baseURL + sharedURL.getHandleResetPasswordURL()
 
         sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams) { response, error in
             Self.deliverHandleResetPasswordResponse(response: response, error: error, requestURLString: urlString, callback: callback)
@@ -137,16 +132,12 @@ public class ResetPasswordServiceWorker {
         }
         
         // construct url
-        if ((properties["CidaasVersion"] != nil) && properties["CidaasVersion"] == "3") {
-            urlString = baseURL + sharedURL.getResetPasswordV3URL()
-        } else {
-            urlString = baseURL + sharedURL.getResetPasswordURL()
-        }
+        urlString = baseURL + sharedURL.getResetPasswordURL()
         
         sharedSession.startSession(url: urlString, method: .post, parameters: bodyParams, callback: callback)
     }
 
-    /// **`startSession`** returns the raw **`Location`** header string on **302** (not JSON). Resolve URL, then map **`/identity/error`** → error or **`exchangeId`+`rprq`** → presenter JSON.
+    /// Maps validate/handle `302 Location` (raw string from `startSession`) to JSON or a `WebAuthError`.
     private static func deliverHandleResetPasswordResponse(response: String?, error: WebAuthError?, requestURLString: String, callback: @escaping (String?, WebAuthError?) -> Void) {
         if let error = error {
             callback(nil, error)

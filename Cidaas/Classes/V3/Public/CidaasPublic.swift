@@ -73,11 +73,7 @@ public final class CidaasPublicBuilder {
 
         var body = PublicConfiguredListRequest()
         body.request_id = rid
-        if id.contains("@") {
-            body.email = id
-        } else {
-            body.identifier = id
-        }
+        body.identifier = id
 
         PublicConfiguredListService.shared.fetch(
             request: body,

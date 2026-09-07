@@ -272,7 +272,6 @@ public class SessionManager {
         httpMethod: String,
         extraheaders: [String: String] = [:]
     ) {
-        guard #available(iOS 14.0, *) else { return }
         guard CidaasHTTPProofToken.shouldSendDpopHeader(for: urlString) else { return }
         do {
             let accessToken = accessTokenForDpopAth(extraheaders: extraheaders, headers: headers)
@@ -293,9 +292,7 @@ public class SessionManager {
     }
 
     private static func applyDpopHeaderIfNeeded(to urlRequest: inout URLRequest) {
-        guard #available(iOS 14.0, *),
-              let urlString = urlRequest.url?.absoluteString
-        else { return }
+        guard let urlString = urlRequest.url?.absoluteString else { return }
         guard CidaasHTTPProofToken.shouldSendDpopHeader(for: urlString) else { return }
         let method = (urlRequest.httpMethod ?? "POST").uppercased()
         do {

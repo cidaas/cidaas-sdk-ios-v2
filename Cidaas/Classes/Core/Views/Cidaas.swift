@@ -61,7 +61,7 @@ public class Cidaas {
         }
     }
 
-    /// When `true` (iOS 14+): every `SessionManager` HTTP call gets a fresh `DPoP` proof header,
+    /// When `true`: every `SessionManager` HTTP call gets a fresh `DPoP` proof header,
     /// and authz / `requestId` / browser authorize URLs include `dpop_jkt`.
     /// Default is `false` — set at app start before login when the client requires DPoP.
     /// If a DPoP-bound token was already saved, proofs are still sent on later calls even when this is `false`

@@ -22,6 +22,7 @@ public class AuthenticateRequest: Codable {
     public var localizedReason: String = ""
     public var usage_type: String = ""
     public var request_id: String = ""
+    public var single_factor_auth: Bool = false
     /// Biometric proof JWT for touchId/fingerprint authenticate (biometric+jwt from Secure Enclave EC P-256)
     public var attestation: String = ""
     public var single_factor_auth: Bool = false
