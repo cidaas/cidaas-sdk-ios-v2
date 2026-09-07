@@ -25,7 +25,6 @@ public class AuthenticateRequest: Codable {
     public var single_factor_auth: Bool = false
     /// Biometric proof JWT for touchId/fingerprint authenticate (biometric+jwt from Secure Enclave EC P-256)
     public var attestation: String = ""
-    public var single_factor_auth: Bool = false
     
     private enum CodingKeys: String, CodingKey {
         case sub, exchange_id, push_id, device_id, client_id, pass_code, password, attempt, usage_type, request_id, attestation, single_factor_auth

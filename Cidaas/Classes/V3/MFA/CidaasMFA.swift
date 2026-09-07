@@ -411,7 +411,6 @@ public final class CidaasMFAAuthenticationBuilder {
         pushNumber: String? = nil,
         requestId: String? = nil,
         usageType: String? = nil,
-        singleFactorAuth: Bool? = nil,
         photo: UIImage = UIImage(),
         attempt: Int = 0,
         localizedReason: String = "Authenticate",
@@ -448,7 +447,6 @@ public final class CidaasMFAAuthenticationBuilder {
         auth.exchange_id = resolvedExchange
         auth.request_id = resolvedRequestId
         auth.usage_type = resolvedUsageType
-        auth.single_factor_auth = resolvedSingleFactorAuth
         auth.applyVerificationCredential(verificationType: verificationType, value: passCode)
         auth.attempt = attempt
         auth.localizedReason = localizedReason
@@ -728,7 +726,7 @@ public final class CidaasMFAAuthenticationBuilder {
 
 // MARK: - Private helpers
 
-private enum MFA {
+public enum MFA {
     static func onMain(_ block: @escaping () -> Void) {
         if Thread.isMainThread {
             block()
