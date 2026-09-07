@@ -95,6 +95,7 @@ public class LoginInteractor {
         self.sharedService.logout(access_token : access_token, properties: savedProp!) { response, error in
             if error == nil {
                 DBHelper.shared.removeAccessToken(sub: sub)
+                CidaasSessionCookies.clear()
             }
             self.sharedPresenter.logout(response: response, errorResponse: error, callback: callback)
             
@@ -130,6 +131,7 @@ public class LoginInteractor {
                 self.sharedService.logout(access_token : result.data.access_token, properties: savedProp!) { response, error in
                     if error == nil {
                         DBHelper.shared.removeAccessToken(sub: sub)
+                        CidaasSessionCookies.clear()
                     }
                     self.sharedPresenter.logout(response: response, errorResponse: error, callback: callback)
                 }

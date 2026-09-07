@@ -40,6 +40,13 @@ public extension Cidaas {
         }.data.requestId
     }
 
+    /// Silent / authorize entry — see ``CidaasPublicBuilder/initLogin(extraParams:completion:)``.
+    func initLogin(extraParams: [String: String] = [:]) async throws -> InitLoginResult {
+        try await handleAsyncCall {
+            Cidaas.shared.publicAPI().initLogin(extraParams: extraParams, completion: $0)
+        }
+    }
+
     func getAccessToken(with refreshToken: String) async throws -> AccessTokenEntity {
         try await handleAsyncCall {
             Cidaas.shared.getAccessToken(refreshToken: refreshToken, callback: $0)

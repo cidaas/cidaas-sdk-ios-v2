@@ -61,6 +61,106 @@ public class AuthzInteractor {
         }
     }
 
+    /// `GET /authz-srv/authz` (query + cookies). After redirects:
+    /// - `redirect_uri`+`code` → tokens
+    /// - `track_id` → prelogin metadata; `mfa_required` → ``InitLoginResult/mfaRequired``
+    /// - else `request_id` → ``InitLoginResult/loginRequired(requestId:)``
+    public func initLogin(
+        extraParams: Dictionary<String, String>,
+        callback: @escaping (Result<InitLoginResult>) -> Void
+    ) {
+        ensureDeviceRegisteredForRequestId { [weak self] regResult in
+            guard let self else { return }
+            switch regResult {
+            case .failure(error: let error):
+                DispatchQueue.main.async {
+                    callback(.failure(error: error))
+                }
+            case .success(result: _):
+                self.performInitLogin(extraParams: extraParams, callback: callback)
+            }
+        }
+    }
+
+    private func performInitLogin(
+        extraParams: Dictionary<String, String>,
+        callback: @escaping (Result<InitLoginResult>) -> Void
+    ) {
+        guard let savedProp = getProperties() else {
+            let error = WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: "properties cannot be empty",
+                statusCode: 417
+            )
+            DispatchQueue.main.async {
+                callback(.failure(error: error))
+            }
+            return
+        }
+
+        sharedService.initLogin(extraParams: extraParams, properties: savedProp) { response, error in
+            if let error {
+                DispatchQueue.main.async {
+                    callback(.failure(error: error))
+                }
+                return
+            }
+            let location = (response ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !location.isEmpty else {
+                let err = WebAuthError.shared.serviceFailureException(
+                    errorCode: 302,
+                    errorMessage: "initLogin returned empty Location",
+                    statusCode: 302
+                )
+                DispatchQueue.main.async {
+                    callback(.failure(error: err))
+                }
+                return
+            }
+
+            let redirectURI = (savedProp["RedirectURL"] ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            switch InitLoginLocationParser.parse(location: location, redirectURI: redirectURI) {
+            case .authorizationCode(let code):
+                AccessTokenController.shared.getAccessToken(code: code) { tokenResult in
+                    switch tokenResult {
+                    case .failure(error: let tokenError):
+                        callback(.failure(error: tokenError))
+                    case .success(result: let login):
+                        callback(.success(result: .loggedIn(login)))
+                    }
+                }
+            case .preloginTrack(let trackId, let requestId, let sub):
+                PreloginMFARequiredResolver.fetch(
+                    trackId: trackId,
+                    requestId: requestId ?? "",
+                    sub: sub ?? "",
+                    properties: savedProp
+                ) { result in
+                    switch result {
+                    case .failure(error: let error):
+                        callback(.failure(error: error))
+                    case .success(result: let mfa):
+                        callback(.success(result: .mfaRequired(mfa)))
+                    }
+                }
+            case .loginRequired(let requestId):
+                DispatchQueue.main.async {
+                    callback(.success(result: .loginRequired(requestId: requestId)))
+                }
+            case .unrecognized:
+                let err = WebAuthError.shared.serviceFailureException(
+                    errorCode: 400,
+                    errorMessage: "initLogin Location neither redirect_uri+code, track_id, nor request_id: \(location)",
+                    statusCode: 400
+                )
+                DispatchQueue.main.async {
+                    callback(.failure(error: err))
+                }
+            }
+        }
+    }
+
     /// Registers when the flag is unset (no platform attestation).
     private func ensureDeviceRegisteredForRequestId(
         completion: @escaping (Result<Bool>) -> Void

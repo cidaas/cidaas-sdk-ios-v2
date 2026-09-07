@@ -187,6 +187,8 @@ public class SessionManager {
         parameters: [String: Any]?,
         encoding: ParameterEncoding = JSONEncoding.default,
         extraheaders: [String: String] = [String: String](),
+        maxRedirects: Int = 0,
+        resolveAsFinalURL: Bool = false,
         callback: @escaping (String?, WebAuthError?) -> Void
     ) {
         
@@ -225,6 +227,7 @@ public class SessionManager {
         if let locale = bodyParams?["locale"] as? String {
             requestHeaders["Accept-Language"] = locale
         }
+        Self.mergeSessionCookies(into: &requestHeaders)
 
         Self.logNetworkRequest(
             url: url,
@@ -234,9 +237,10 @@ public class SessionManager {
         )
 
         // Manual `Cookie` headers must not compete with URLSession cookie storage.
-        let hasManualCookie = extraheaders.keys.contains {
-            $0.caseInsensitiveCompare("Cookie") == .orderedSame
-        }
+        let hasManualCookie = requestHeaders.value(for: "Cookie") != nil
+        let redirectHandler: RedirectHandler = maxRedirects > 0
+            ? LimitedRedirectHandler(maxRedirects: maxRedirects)
+            : Redirector.doNotFollow
 
         currentSession().request(
             url,
@@ -249,10 +253,14 @@ public class SessionManager {
                 urlRequest.httpShouldHandleCookies = false
             }
         }
-            .redirect(using: Redirector.doNotFollow)
+            .redirect(using: redirectHandler)
             .validate(statusCode: 200..<303)
             .responseString(encoding: .utf8, emptyResponseCodes: Set([204, 205, 302])) { response in
-                self.responseRedirect(response: response, callback: callback)
+                self.responseRedirect(
+                    response: response,
+                    resolveAsFinalURL: resolveAsFinalURL,
+                    callback: callback
+                )
             }
     }
 
@@ -413,18 +421,46 @@ public class SessionManager {
             urlReq.setValue(header.value, forHTTPHeaderField: header.name)
         }
         Self.applyDpopHeaderIfNeeded(to: &urlReq)
+        Self.mergeSessionCookies(into: &urlReq)
         if urlReq.value(forHTTPHeaderField: "Cookie") != nil {
             urlReq.httpShouldHandleCookies = false
         }
         return urlReq
     }
+
+    /// Attaches present `cidaas_dr` / `cidaas_sid` / `cidaas_sso` to the Cookie header.
+    private static func mergeSessionCookies(into headers: inout HTTPHeaders) {
+        let existing = headers.value(for: "Cookie")
+        let deviceId = SDKDeviceIdResolver.resolve()
+        if let merged = CidaasSessionCookies.mergeIntoCookieHeader(existing, deviceId: deviceId) {
+            headers["Cookie"] = merged
+        }
+    }
+
+    private static func mergeSessionCookies(into urlRequest: inout URLRequest) {
+        let existing = urlRequest.value(forHTTPHeaderField: "Cookie")
+        let deviceId = SDKDeviceIdResolver.resolve()
+        if let merged = CidaasSessionCookies.mergeIntoCookieHeader(existing, deviceId: deviceId) {
+            urlRequest.setValue(merged, forHTTPHeaderField: "Cookie")
+        }
+    }
     
-    func responseRedirect(response: AFDataResponse<String>, callback: @escaping (String?, WebAuthError?) -> Void) {
+    func responseRedirect(
+        response: AFDataResponse<String>,
+        resolveAsFinalURL: Bool = false,
+        callback: @escaping (String?, WebAuthError?) -> Void
+    ) {
         Self.logNetworkResponse(response)
         switch response.result {
         case .success(let value):
             if response.response?.statusCode == 200 || response.response?.statusCode == 201 {
-                callback(value, nil)
+                CidaasSessionCookies.persist(from: response.response)
+                if resolveAsFinalURL {
+                    let finalURL = Self.finalURLString(from: response) ?? value
+                    callback(finalURL, nil)
+                } else {
+                    callback(value, nil)
+                }
                 return
             }
             if (response.response?.statusCode == 204) {
@@ -432,9 +468,12 @@ public class SessionManager {
                 return
             }
             if response.response?.statusCode == 302 {
+                CidaasSessionCookies.persist(from: response.response)
                 let loc = response.response?.headers.value(for: "Location")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 if !loc.isEmpty {
-                    callback(loc, nil)
+                    callback(Self.absoluteURLString(loc, relativeTo: response.response?.url) ?? loc, nil)
+                } else if resolveAsFinalURL, let finalURL = Self.finalURLString(from: response) {
+                    callback(finalURL, nil)
                 } else {
                     let body = value.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !body.isEmpty {
@@ -447,8 +486,27 @@ public class SessionManager {
             }
             else if response.data != nil {
                 var dataResponse = String(decoding: response.data!, as: UTF8.self)
+                if let challenge = ContinueLoginChallengeParser.parse(dataResponse), challenge.isMFARequired {
+                    callback(
+                        nil,
+                        WebAuthError.shared.serviceFailureException(
+                            errorCode: challenge.error,
+                            errorMessage: dataResponse,
+                            statusCode: response.response?.statusCode ?? challenge.status,
+                            error: challenge.asErrorResponseEntity()
+                        )
+                    )
+                    return
+                }
                 let errorData = extractErrorResponseData(from: dataResponse)
-                callback(nil, WebAuthError.shared.serviceFailureException(errorCode: errorData.errorCode, errorMessage: errorData.errorMessage ?? "", statusCode: response.response?.statusCode ?? 400))
+                let message = (errorData.errorMessage?.isEmpty == false)
+                    ? (errorData.errorMessage ?? "")
+                    : dataResponse
+                callback(nil, WebAuthError.shared.serviceFailureException(
+                    errorCode: errorData.errorCode ?? "",
+                    errorMessage: message,
+                    statusCode: response.response?.statusCode ?? 400
+                ))
             }
             else {
                 callback(nil, WebAuthError.shared.serviceFailureException(errorCode: 400, errorMessage: response.description, statusCode: response.response?.statusCode ?? 400))
@@ -457,11 +515,20 @@ public class SessionManager {
             break
         case .failure(let error):
             if response.response?.statusCode == 302 {
+                CidaasSessionCookies.persist(from: response.response)
                 let loc = response.response?.headers.value(for: "Location")?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 if !loc.isEmpty {
-                    callback(loc, nil)
+                    callback(Self.absoluteURLString(loc, relativeTo: response.response?.url) ?? loc, nil)
                     return
                 }
+            }
+            // Custom-scheme redirect_uri (e.g. myapp://callback?code=) often fails URL loading after follow.
+            if resolveAsFinalURL,
+               let candidate = Self.finalURLString(from: response)
+                ?? Self.failingURLString(from: error),
+               !candidate.isEmpty {
+                callback(candidate, nil)
+                return
             }
             if error._domain == NSURLErrorDomain {
                 // return failure
@@ -470,14 +537,84 @@ public class SessionManager {
             }
             if response.data != nil {
                 var dataResponse = String(decoding: response.data!, as: UTF8.self)
+                if let challenge = ContinueLoginChallengeParser.parse(dataResponse), challenge.isMFARequired {
+                    callback(
+                        nil,
+                        WebAuthError.shared.serviceFailureException(
+                            errorCode: challenge.error,
+                            errorMessage: dataResponse,
+                            statusCode: response.response?.statusCode ?? challenge.status,
+                            error: challenge.asErrorResponseEntity()
+                        )
+                    )
+                    return
+                }
                 let errorData = extractErrorResponseData(from: dataResponse)
-                callback(nil, WebAuthError.shared.serviceFailureException(errorCode: errorData.errorCode, errorMessage: errorData.errorMessage ?? "", statusCode: response.response?.statusCode ?? 400))
+                let message = (errorData.errorMessage?.isEmpty == false)
+                    ? (errorData.errorMessage ?? "")
+                    : dataResponse
+                callback(nil, WebAuthError.shared.serviceFailureException(
+                    errorCode: errorData.errorCode ?? "",
+                    errorMessage: message,
+                    statusCode: response.response?.statusCode ?? 400
+                ))
             }
             else {
                 callback(nil, WebAuthError.shared.serviceFailureException(errorCode: 500, errorMessage: error.localizedDescription, statusCode: response.response?.statusCode ?? 400))
             }
             break
         }
+    }
+
+    /// Last response URL, or Location when present.
+    private static func finalURLString(from response: AFDataResponse<String>) -> String? {
+        if let loc = response.response?.headers.value(for: "Location")?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !loc.isEmpty {
+            return absoluteURLString(loc, relativeTo: response.response?.url) ?? loc
+        }
+        if let url = response.response?.url?.absoluteString, !url.isEmpty {
+            return url
+        }
+        if let url = response.request?.url?.absoluteString, !url.isEmpty {
+            return url
+        }
+        return nil
+    }
+
+    private static func failingURLString(from error: AFError) -> String? {
+        var current: Error? = error
+        while let err = current {
+            let ns = err as NSError
+            if let url = ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL {
+                return url.absoluteString
+            }
+            if let raw = ns.userInfo[NSURLErrorFailingURLStringErrorKey] as? String,
+               !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return raw
+            }
+            current = ns.userInfo[NSUnderlyingErrorKey] as? Error ?? (err as? AFError)?.underlyingError
+            if current == nil, let af = err as? AFError {
+                switch af {
+                case .sessionTaskFailed(let underlying):
+                    current = underlying
+                default:
+                    break
+                }
+            }
+            if current as AnyObject? === err as AnyObject? { break }
+        }
+        return nil
+    }
+
+    private static func absoluteURLString(_ location: String, relativeTo base: URL?) -> String? {
+        if let absolute = URL(string: location), absolute.scheme != nil {
+            return absolute.absoluteString
+        }
+        if let base, let resolved = URL(string: location, relativeTo: base)?.absoluteURL {
+            return resolved.absoluteString
+        }
+        return nil
     }
     
     public func string2error(string: String) -> ErrorResponseEntity {
@@ -554,6 +691,12 @@ func extractErrorResponseData(from jsonString: String) -> (errorCode: String?, e
                         // Case 2: "error" is a dictionary with an inner "error" string
                         errorMessage = nestedError
                     }
+                }
+                // Continue-login precheck: { data: { error: "mfa_required", ... } }
+                if errorMessage.isEmpty,
+                   let data = jsonObject["data"] as? [String: Any],
+                   let dataError = data["error"] as? String {
+                    errorMessage = dataError
                 }
             }
         } catch {

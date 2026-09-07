@@ -108,13 +108,22 @@ enum CidaasHTTPProof {
     // MARK: - Signing keys
 
     private enum SigningKey {
+        private static let lock = NSLock()
+        /// ponytail: when Keychain rejects permanent keys (-34018 in Simulator/hostless tests), keep ephemeral SecKeys for the process.
+        private static var memoryKeys: [String: SecKey] = [:]
+
         static func loadOrCreate(tag: String, secureEnclave: Bool, context: LAContext = LAContext()) throws -> SecKey {
             let tagData = tag.data(using: .utf8)!
-            if let existing = loadPrivate(tagData: tagData, context: secureEnclave ? context : nil) {
+            // ponytail: Simulator has no Secure Enclave — software EC P-256 so device reg / DPoP local flows work.
+            let useSecureEnclave = secureEnclave && Self.secureEnclaveAvailable
+            if let existing = loadPrivate(tagData: tagData, context: useSecureEnclave ? context : nil) {
                 return existing
             }
+            if let cached = memoryKey(for: tag) {
+                return cached
+            }
             var error: Unmanaged<CFError>?
-            if secureEnclave {
+            if useSecureEnclave {
                 guard let access = SecAccessControlCreateWithFlags(
                     nil,
                     kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
@@ -138,19 +147,56 @@ enum CidaasHTTPProof {
                 }
                 return key
             }
+            if let key = createSoftwareKey(tagData: tagData, permanent: true) {
+                return key
+            }
+            // Keychain unavailable (common on Simulator unit-test host / -34018).
+            guard let ephemeral = createSoftwareKey(tagData: tagData, permanent: false) else {
+                throw error?.takeRetainedValue() as Error? ?? NSError(
+                    domain: "CidaasHTTPProof",
+                    code: -34018,
+                    userInfo: [NSLocalizedDescriptionKey: "Failed to generate EC keypair"]
+                )
+            }
+            storeMemoryKey(ephemeral, for: tag)
+            return ephemeral
+        }
+
+        private static var secureEnclaveAvailable: Bool {
+            #if targetEnvironment(simulator)
+            return false
+            #else
+            return true
+            #endif
+        }
+
+        private static func createSoftwareKey(tagData: Data, permanent: Bool) -> SecKey? {
+            var error: Unmanaged<CFError>?
+            var privateAttrs: [String: Any] = [
+                kSecAttrIsPermanent as String: permanent,
+            ]
+            if permanent {
+                privateAttrs[kSecAttrApplicationTag as String] = tagData
+                privateAttrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            }
             let attrs: [String: Any] = [
                 kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
                 kSecAttrKeySizeInBits as String: 256,
-                kSecPrivateKeyAttrs as String: [
-                    kSecAttrIsPermanent as String: true,
-                    kSecAttrApplicationTag as String: tagData,
-                    kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-                ],
+                kSecPrivateKeyAttrs as String: privateAttrs,
             ]
-            guard let key = SecKeyCreateRandomKey(attrs as CFDictionary, &error) else {
-                throw error!.takeRetainedValue() as Error
-            }
-            return key
+            return SecKeyCreateRandomKey(attrs as CFDictionary, &error)
+        }
+
+        private static func memoryKey(for tag: String) -> SecKey? {
+            lock.lock()
+            defer { lock.unlock() }
+            return memoryKeys[tag]
+        }
+
+        private static func storeMemoryKey(_ key: SecKey, for tag: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            memoryKeys[tag] = key
         }
 
         private static func loadPrivate(tagData: Data, context: LAContext?) -> SecKey? {

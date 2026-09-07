@@ -97,21 +97,50 @@ public enum BiometricProofSigner {
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom
         ]
         SecItemDelete(query as CFDictionary)
+        #if targetEnvironment(simulator)
+        clearMemoryKey(for: tagData)
+        #endif
     }
     
     // MARK: - Private Implementation
     
+    #if targetEnvironment(simulator)
+    private static let memoryKeyLock = NSLock()
+    /// ponytail: ephemeral key cache when Keychain permanent store fails (Simulator -34018).
+    private static var memoryKeys: [Data: SecKey] = [:]
+    #endif
+
     private static func loadOrCreateKey(context: LAContext) throws -> SecKey {
         let tagData = KeychainTag.mfaBiometric.data(using: .utf8)!
-        
-        // Try to load existing key
+
+        #if targetEnvironment(simulator)
+        // ponytail: no Secure Enclave on Simulator — software EC key for local MFA/device flows.
+        if let existing = loadPrivateKey(tagData: tagData, context: nil) {
+            return existing
+        }
+        if let cached = memoryKey(for: tagData) {
+            return cached
+        }
+        if let permanent = createSoftwareKey(tagData: tagData, permanent: true) {
+            return permanent
+        }
+        guard let ephemeral = createSoftwareKey(tagData: tagData, permanent: false) else {
+            throw BiometricProofError.keyGenerationFailed("Failed to generate EC keypair")
+        }
+        storeMemoryKey(ephemeral, for: tagData)
+        return ephemeral
+        #else
         if let existing = loadPrivateKey(tagData: tagData, context: context) {
             return existing
         }
-        
-        // Create new key in Secure Enclave with biometric protection
+        return try createSecureEnclaveKey(tagData: tagData, context: context)
+        #endif
+    }
+
+    #if !targetEnvironment(simulator)
+    private static func createSecureEnclaveKey(tagData: Data, context: LAContext) throws -> SecKey {
         var error: Unmanaged<CFError>?
-        
+
         guard let access = SecAccessControlCreateWithFlags(
             nil,
             kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
@@ -122,7 +151,7 @@ public enum BiometricProofSigner {
                 error?.takeRetainedValue().localizedDescription ?? "Access control creation failed"
             )
         }
-        
+
         let attrs: [String: Any] = [
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
             kSecAttrKeySizeInBits as String: 256,
@@ -133,25 +162,64 @@ public enum BiometricProofSigner {
                 kSecAttrAccessControl as String: access,
             ],
         ]
-        
+
         guard let key = SecKeyCreateRandomKey(attrs as CFDictionary, &error) else {
             throw BiometricProofError.keyGenerationFailed(
                 error?.takeRetainedValue().localizedDescription ?? "Key creation failed"
             )
         }
-        
         return key
     }
-    
-    private static func loadPrivateKey(tagData: Data, context: LAContext) -> SecKey? {
-        let query: [String: Any] = [
+    #endif
+
+    #if targetEnvironment(simulator)
+    private static func createSoftwareKey(tagData: Data, permanent: Bool) -> SecKey? {
+        var error: Unmanaged<CFError>?
+        var privateAttrs: [String: Any] = [
+            kSecAttrIsPermanent as String: permanent,
+        ]
+        if permanent {
+            privateAttrs[kSecAttrApplicationTag as String] = tagData
+            privateAttrs[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        }
+        let attrs: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeySizeInBits as String: 256,
+            kSecPrivateKeyAttrs as String: privateAttrs,
+        ]
+        return SecKeyCreateRandomKey(attrs as CFDictionary, &error)
+    }
+
+    private static func memoryKey(for tagData: Data) -> SecKey? {
+        memoryKeyLock.lock()
+        defer { memoryKeyLock.unlock() }
+        return memoryKeys[tagData]
+    }
+
+    private static func storeMemoryKey(_ key: SecKey, for tagData: Data) {
+        memoryKeyLock.lock()
+        defer { memoryKeyLock.unlock() }
+        memoryKeys[tagData] = key
+    }
+
+    private static func clearMemoryKey(for tagData: Data) {
+        memoryKeyLock.lock()
+        defer { memoryKeyLock.unlock() }
+        memoryKeys.removeValue(forKey: tagData)
+    }
+    #endif
+
+    private static func loadPrivateKey(tagData: Data, context: LAContext?) -> SecKey? {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassKey,
             kSecAttrApplicationTag as String: tagData,
             kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
             kSecReturnRef as String: true,
-            kSecUseAuthenticationContext as String: context,
         ]
-        
+        if let context {
+            query[kSecUseAuthenticationContext as String] = context
+        }
+
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         guard status == errSecSuccess, let key = item else { return nil }

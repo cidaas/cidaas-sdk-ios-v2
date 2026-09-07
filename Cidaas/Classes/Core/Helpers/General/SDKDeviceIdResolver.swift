@@ -59,11 +59,13 @@ enum SDKDeviceIdResolver {
         _ = KeychainWrapper.standard.set(normalized, forKey: keychainKey)
     }
 
-    /// `Cookie: cidaas_dr=<deviceId>` for authz / MFA calls. Nil if device id is missing.
+    /// `Cookie` with present `cidaas_dr` / `cidaas_sid` / `cidaas_sso`. Nil if device id is missing.
     static func cidaasDrCookieHeaders() -> [String: String]? {
         let deviceId = resolve()
         guard !deviceId.isEmpty else { return nil }
-        return ["Cookie": "cidaas_dr=\(deviceId)"]
+        let cookie = CidaasSessionCookies.mergeIntoCookieHeader(nil, deviceId: deviceId)
+            ?? "cidaas_dr=\(deviceId)"
+        return ["Cookie": cookie]
     }
 
     private static func normalize(_ value: String) -> String {

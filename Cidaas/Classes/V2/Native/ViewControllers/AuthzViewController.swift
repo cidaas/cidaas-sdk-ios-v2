@@ -20,4 +20,12 @@ public class AuthzViewController {
     public func getRequestId(extraParams: Dictionary<String, String>, callback: @escaping(Result<RequestIdResponseEntity>) -> Void) {
         sharedInteractor.getRequestId(extraParams: extraParams, callback: callback)
     }
+
+    /// Authorize / silent login via `GET /authz-srv/authz`.
+    public func initLogin(
+        extraParams: Dictionary<String, String> = [:],
+        callback: @escaping (Result<InitLoginResult>) -> Void
+    ) {
+        sharedInteractor.initLogin(extraParams: extraParams, callback: callback)
+    }
 }

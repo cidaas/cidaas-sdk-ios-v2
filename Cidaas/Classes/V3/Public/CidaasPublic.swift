@@ -30,6 +30,20 @@ public final class CidaasPublicBuilder {
         }
     }
 
+    /// `GET /authz-srv/authz` with query params + cookies.
+    /// - ``InitLoginResult/loggedIn`` when final URL starts with `redirect_uri` and has `code`
+    /// - ``InitLoginResult/mfaRequired`` when `track_id` → prelogin metadata `validation_type=mfa_required`
+    /// - ``InitLoginResult/loginRequired`` when `request_id` is present instead
+    public func initLogin(
+        extraParams: [String: String] = [:],
+        completion: @escaping (Result<InitLoginResult>) -> Void
+    ) {
+        let params = CidaasHTTPProofAuthz.mergingDpopJKT(into: extraParams)
+        AuthzInteractor.shared.initLogin(extraParams: params) { result in
+            CidaasV3Callback.deliver(result, to: completion)
+        }
+    }
+
     /// Lists passwordless sign-in methods for an identifier (`POST /verification-srv/public/graph/user/setup`).
     public func fetchConfiguredList(
         requestId: String,
