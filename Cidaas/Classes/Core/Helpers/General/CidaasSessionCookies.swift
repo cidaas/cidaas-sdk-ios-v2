@@ -12,8 +12,6 @@ import Security
 enum CidaasSessionCookies {
 
     private static let service = "com.cidaas.sdk.session-cookies"
-    private static let sidAccount = "cidaas_sid"
-    private static let ssoAccount = "cidaas_sso"
     private static let sidName = "cidaas_sid"
     private static let ssoName = "cidaas_sso"
 
@@ -21,17 +19,17 @@ enum CidaasSessionCookies {
     /// ponytail: hostless XCTest often gets Keychain -34018; memory keeps same-process reads working. Host apps use Keychain.
     private static var memoryFallback: [String: String] = [:]
 
-    static var sid: String { read(account: sidAccount) }
+    static var sid: String { read(account: sidName) }
 
-    static var sso: String { read(account: ssoAccount) }
+    static var sso: String { read(account: ssoName) }
 
     /// Writes non-nil, non-empty values. Pass `nil` to leave that cookie unchanged.
     static func persist(sid: String?, sso: String?) {
         if let sid, !trimmed(sid).isEmpty {
-            write(trimmed(sid), account: sidAccount)
+            write(trimmed(sid), account: sidName)
         }
         if let sso, !trimmed(sso).isEmpty {
-            write(trimmed(sso), account: ssoAccount)
+            write(trimmed(sso), account: ssoName)
         }
     }
 
@@ -61,8 +59,8 @@ enum CidaasSessionCookies {
     }
 
     static func clear() {
-        delete(account: sidAccount)
-        delete(account: ssoAccount)
+        delete(account: sidName)
+        delete(account: ssoName)
     }
 
     private static let drName = "cidaas_dr"
