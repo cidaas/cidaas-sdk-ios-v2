@@ -24,11 +24,6 @@ extension Cidaas {
     ) {
         mfa(type).enrollment().enrollmentSetup(accessToken: accessToken, sub: sub, completion: completion)
     }
-
-    /// Device MFA management APIs (history, pending push, FCM, unlink, etc.) — not tied to a verification type.
-    public func mfaSupport() -> CidaasMFASupportBuilder {
-        CidaasMFASupportBuilder(verificationType: "")
-    }
 }
 
 // MARK: - Public types
@@ -96,17 +91,20 @@ fileprivate final class CidaasMFAAuthenticationSession {
     var cachedRequestId: String?
     var cachedUsageType: String?
     var cachedStatusId: String?
+    var cachedSingleFactorAuth: Bool = false
 
     func storeInitiation(
         sub: String,
         exchangeId: String,
         requestId: String,
-        usageType: String
+        usageType: String,
+        singleFactorAuth: Bool
     ) {
         cachedSub = sub
         cachedExchangeId = exchangeId
         cachedRequestId = requestId
         cachedUsageType = usageType
+        cachedSingleFactorAuth = singleFactorAuth
         cachedStatusId = nil
     }
 
@@ -137,11 +135,6 @@ public final class CidaasMFABuilder {
 
     public func authentication() -> CidaasMFAAuthenticationBuilder {
         CidaasMFAAuthenticationBuilder(verificationType: verificationType, session: authenticationSession)
-    }
-
-    /// Device management, pending push auth, history, FCM update, and related support APIs.
-    public func support() -> CidaasMFASupportBuilder {
-        CidaasMFASupportBuilder(verificationType: verificationType)
     }
 }
 
@@ -344,12 +337,14 @@ public final class CidaasMFAAuthenticationBuilder {
     /// Sends required `Cookie: cidaas_dr=<deviceId>` (same as authz `requestId`).
     /// - `INITIAL_AUTHENTICATION`: pass `identifier` (e.g. email); do not pass `sub`.
     /// - `MULTIFACTOR_AUTHENTICATION`: pass masked `sub` only (not the logged-in user's real sub).
+    /// - `singleFactorAuth`: set `true` for PATTERN / TOUCHID / FACE so initiation → verification skips push acknowledge/allow.
     public func initiation(
         requestId: String,
         usageType: String,
         sub: String = "",
         identifier: String = "",
         mediumId: String = "",
+        singleFactorAuth: Bool = false,
         completion: @escaping (Result<CidaasMFAAuthenticationInitiationResult>) -> Void
     ) {
         if let message = Self.validateInitiation(
@@ -370,6 +365,7 @@ public final class CidaasMFAAuthenticationBuilder {
         req.usage_type = usageType
         req.device_id = MFA.deviceId()
         req.push_id = MFA.pushId()
+        req.single_factor_auth = singleFactorAuth
 
         VerificationViewController.shared.initiate(verificationType: verificationType, incomingData: req) { [self] result in
             switch result {
@@ -388,7 +384,8 @@ public final class CidaasMFAAuthenticationBuilder {
                     sub: cachedSub,
                     exchangeId: exchangeId,
                     requestId: requestId,
-                    usageType: usageType
+                    usageType: usageType,
+                    singleFactorAuth: singleFactorAuth
                 )
                 let masked = resp.data.maskedSub.isEmpty ? nil : resp.data.maskedSub
                 let value = CidaasMFAAuthenticationInitiationResult(
@@ -404,6 +401,7 @@ public final class CidaasMFAAuthenticationBuilder {
     }
 
     /// Sends required `Cookie: cidaas_dr=<deviceId>` (same as authz `requestId`).
+    /// Pass `singleFactorAuth` when initiate used it (defaults to the value cached on this builder session).
     public func verification(
         exchangeId: String? = nil,
         otp: String? = nil,
@@ -412,6 +410,7 @@ public final class CidaasMFAAuthenticationBuilder {
         pushNumber: String? = nil,
         requestId: String? = nil,
         usageType: String? = nil,
+        singleFactorAuth: Bool? = nil,
         photo: UIImage = UIImage(),
         attempt: Int = 0,
         localizedReason: String = "Authenticate",
@@ -421,6 +420,7 @@ public final class CidaasMFAAuthenticationBuilder {
         let resolvedSub = session.cachedSub ?? ""
         let resolvedRequestId = requestId ?? session.cachedRequestId ?? ""
         let resolvedUsageType = usageType ?? session.cachedUsageType ?? ""
+        let resolvedSingleFactorAuth = singleFactorAuth ?? session.cachedSingleFactorAuth
         guard !resolvedExchange.isEmpty,
               !resolvedSub.isEmpty,
               !resolvedRequestId.isEmpty,
@@ -443,6 +443,7 @@ public final class CidaasMFAAuthenticationBuilder {
         auth.exchange_id = resolvedExchange
         auth.request_id = resolvedRequestId
         auth.usage_type = resolvedUsageType
+        auth.single_factor_auth = resolvedSingleFactorAuth
         auth.applyVerificationCredential(verificationType: verificationType, value: passCode)
         auth.attempt = attempt
         auth.localizedReason = localizedReason
@@ -644,137 +645,6 @@ public final class CidaasMFAAuthenticationBuilder {
     private func resolvedPushExchangeId(_ explicit: String?) -> String? {
         let value = explicit ?? session.cachedExchangeId ?? ""
         return value.isEmpty ? nil : value
-    }
-}
-
-// MARK: - Support (device MFA management, history, pending push)
-
-public final class CidaasMFASupportBuilder {
-
-    private let verificationType: String
-
-    fileprivate init(verificationType: String) {
-        self.verificationType = verificationType
-    }
-
-    /// Configured MFA methods for the user on this device (`sub` + current `device_id` / `push_id`).
-    public func configurations(sub: String, completion: @escaping (Result<MFAListResponse>) -> Void) {
-        let resolvedSub = sub.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !resolvedSub.isEmpty else {
-            MFA.fail("sub is required", completion: completion)
-            return
-        }
-        let req = MFAListRequest()
-        req.sub = resolvedSub
-        req.device_id = MFA.deviceId()
-        req.push_id = MFA.pushId()
-        VerificationViewController.shared.getConfiguredList(incomingData: req) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func deleteAll(
-        incomingData: DeleteRequest,
-        completion: @escaping (Result<DeleteResponse>) -> Void
-    ) {
-        VerificationViewController.shared.deleteAll(incomingData: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func delete(
-        incomingData: DeleteRequest,
-        completion: @escaping (Result<DeleteResponse>) -> Void
-    ) {
-        VerificationViewController.shared.delete(incomingData: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func pendingNotifications(
-        incomingData: PendingNotificationRequest,
-        completion: @escaping (Result<PendingNotificationResponse>) -> Void
-    ) {
-        VerificationViewController.shared.getPendingNotificationList(incomingData: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func history(
-        incomingData: MFAHistoryRequest,
-        completion: @escaping (Result<MFAHistoryResponse>) -> Void
-    ) {
-        VerificationViewController.shared.getMFAHistoryList(incomingData: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    /// Updates the device push token on the verification backend. 
-    public func updateFCMToken(
-        incomingData: UpdateFCMRequest,
-        completion: @escaping (Result<UpdateFCMResponse>) -> Void
-    ) {
-        VerificationViewController.shared.updateFCMToken(updateFCMRequest: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    /// `POST /login-srv/verification/sdk/login` — returns an authorization `code` only.
-    /// Prefer `authentication().continueLogin(...)` when tokens are required.
-    public func continueLogin(
-        incomingData: PasswordlessRequest,
-        completion: @escaping (Result<AuthzCodeResponse>) -> Void
-    ) {
-        VerificationInteractor.shared.passwordlessContinue(incomingData: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    /// - Important: Renamed to ``continueLogin(incomingData:completion:)``. Kept for source compatibility.
-    @available(*, deprecated, renamed: "continueLogin(incomingData:completion:)")
-    public func passwordlessContinue(
-        incomingData: PasswordlessRequest,
-        completion: @escaping (Result<AuthzCodeResponse>) -> Void
-    ) {
-        continueLogin(incomingData: incomingData, completion: completion)
-    }
-
-    public func timeline(
-        incomingData: TimeLineRequest,
-        completion: @escaping (Result<TimeLineDetailsResponse>) -> Void
-    ) {
-        VerificationViewController.shared.getTimeLineDetails(timeLineRequest: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func configuredDeviceList(
-        incomingData: MFAConfiguredDeviceListRequest,
-        completion: @escaping (Result<MFAConfiguredDeviceListResponse>) -> Void
-    ) {
-        VerificationViewController.shared.getMFAConfiguredDeviceList(
-            mfaConfiguredDeviceListRequest: incomingData
-        ) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func deleteDevice(
-        incomingData: DeleteDeviceRequest,
-        completion: @escaping (Result<DeleteResponse>) -> Void
-    ) {
-        VerificationViewController.shared.deleteDevice(deleteRequest: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
-    }
-
-    public func deviceConfiguredList(
-        incomingData: MFAListRequest,
-        completion: @escaping (Result<MFAListResponse>) -> Void
-    ) {
-        VerificationViewController.shared.getDeviceConfiguredList(mfaListRequest: incomingData) { result in
-            MFA.onMain { completion(result) }
-        }
     }
 }
 

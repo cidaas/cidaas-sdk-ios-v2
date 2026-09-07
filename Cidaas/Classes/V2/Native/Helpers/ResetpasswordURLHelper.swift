@@ -9,30 +9,23 @@ import Foundation
 
 public class ResetpasswordURLHelper {
     
-    public static var shared : ResetpasswordURLHelper = ResetpasswordURLHelper()
+    public static var shared: ResetpasswordURLHelper = ResetpasswordURLHelper()
     
+    /// `POST /password-srv/resetpassword` — action selected via query param.
     public var resetPasswordURL = "/password-srv/resetpassword"
-    public var initiateResetPasswordURL = "/users-srv/resetpassword/initiate"
-    public var handleResetPasswordURL = "/users-srv/resetpassword/validatecode"
-    public var acceptResetPasswordURL = "/users-srv/resetpassword/accept"
     
+    /// Start reset (`action=initiatereset`).
     public func getInitiateResetPasswordURL() -> String {
-        return initiateResetPasswordURL
+        return resetPasswordURL + "?action=initiatereset"
     }
     
+    /// Validate OTP / code (`action=validatecode`).
     public func getHandleResetPasswordURL() -> String {
-        return handleResetPasswordURL
-    }
-    
-    public func getHandleResetPasswordV3URL() -> String {
         return resetPasswordURL + "?action=validatecode"
     }
    
-    public func getResetPasswordV3URL() -> String {
-        return resetPasswordURL + "?action=acceptreset"
-    }
-    
+    /// Accept new password (`action=acceptreset`).
     public func getResetPasswordURL() -> String {
-        return acceptResetPasswordURL
+        return resetPasswordURL + "?action=acceptreset"
     }
 }

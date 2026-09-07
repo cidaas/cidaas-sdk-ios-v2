@@ -18,4 +18,5 @@ public class InitiateRequest: Codable {
     public var usage_type: String = ""
     public var device_id: String = ""
     public var push_id: String = ""
+    public var single_factor_auth: Bool = false
 }
