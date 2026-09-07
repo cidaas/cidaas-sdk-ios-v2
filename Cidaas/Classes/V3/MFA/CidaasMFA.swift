@@ -467,12 +467,14 @@ public final class CidaasMFAAuthenticationBuilder {
         }
     }
 
-    /// Completes authentication: `POST /login-srv/verification/sdk/login`, then exchanges the authorization `code` for tokens.
+    /// Completes authentication: `POST /login-srv/verification/sdk/login` (or
+    /// `POST /login-srv/precheck/continue/{trackId}` when `trackId` is set), then exchanges `code` for tokens.
     /// Call after a successful `verification()`. Pass `authenticateResponse` when available.
     public func continueLogin(
         authenticateResponse: AuthenticateResponse? = nil,
         requestId: String? = nil,
         sub: String? = nil,
+        trackId: String? = nil,
         completion: @escaping (Result<LoginResponseEntity>) -> Void
     ) {
         let resolvedStatusId = (authenticateResponse?.data.status_id
@@ -485,6 +487,7 @@ public final class CidaasMFAAuthenticationBuilder {
             : (!explicitSub.isEmpty ? explicitSub : (session.cachedSub ?? ""))
         let resolvedRequestId = (requestId ?? session.cachedRequestId ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTrackId = (trackId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolvedStatusId.isEmpty, !resolvedSub.isEmpty, !resolvedRequestId.isEmpty else {
             MFA.fail(
                 "status_id, sub, and requestId are required after verification",
@@ -500,6 +503,7 @@ public final class CidaasMFAAuthenticationBuilder {
         req.verificationType = verificationType
         req.device_id = MFA.deviceId()
         req.push_id = MFA.pushId()
+        req.track_id = resolvedTrackId
 
         VerificationInteractor.shared.passwordlessContinue(incomingData: req) { result in
             switch result {
@@ -518,13 +522,14 @@ public final class CidaasMFAAuthenticationBuilder {
         }
     }
 
-    /// Same flow as ``continueLogin(authenticateResponse:requestId:sub:completion:)`` but returns
+    /// Same flow as ``continueLogin(authenticateResponse:requestId:sub:trackId:completion:)`` but returns
     /// ``InitLoginResult`` (`.loggedIn` / `.mfaRequired`) like ``CidaasPublicBuilder/initLogin``.
     /// Use this when continue-login prechecks can return `data.error == mfa_required`.
     public func continueLogin(
         authenticateResponse: AuthenticateResponse? = nil,
         requestId: String? = nil,
         sub: String? = nil,
+        trackId: String? = nil,
         completion: @escaping (Result<InitLoginResult>) -> Void
     ) {
         let resolvedStatusId = (authenticateResponse?.data.status_id
@@ -537,6 +542,7 @@ public final class CidaasMFAAuthenticationBuilder {
             : (!explicitSub.isEmpty ? explicitSub : (session.cachedSub ?? ""))
         let resolvedRequestId = (requestId ?? session.cachedRequestId ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedTrackId = (trackId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolvedStatusId.isEmpty, !resolvedSub.isEmpty, !resolvedRequestId.isEmpty else {
             MFA.fail(
                 "status_id, sub, and requestId are required after verification",
@@ -552,6 +558,7 @@ public final class CidaasMFAAuthenticationBuilder {
         req.verificationType = verificationType
         req.device_id = MFA.deviceId()
         req.push_id = MFA.pushId()
+        req.track_id = resolvedTrackId
 
         VerificationInteractor.shared.passwordlessContinue(incomingData: req) { result in
             switch result {

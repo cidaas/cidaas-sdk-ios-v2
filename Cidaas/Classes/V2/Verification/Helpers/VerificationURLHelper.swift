@@ -33,6 +33,8 @@ public class VerificationURLHelper {
     public var timeLineURL: String = "/verification-actions-srv/mfa/timeline"
 
     public var passwordlessContinueURL: String = "/login-srv/verification/sdk/login"
+    /// Step-up / precheck continue when a `track_id` is available.
+    public var precheckContinueURL: String = "/login-srv/precheck/continue"
 
     public var unlinkURL: String = "/verification-actions-srv/devices/"
     public var listURL: String = "/verification-actions-srv/devices/"
@@ -102,6 +104,10 @@ public class VerificationURLHelper {
     
     public func getPasswordlessContinueURL() -> String {
         return passwordlessContinueURL
+    }
+
+    public func getPrecheckContinueURL(trackId: String) -> String {
+        return precheckContinueURL + "/" + trackId
     }
     
     public func getUpdateFCMURL() -> String {

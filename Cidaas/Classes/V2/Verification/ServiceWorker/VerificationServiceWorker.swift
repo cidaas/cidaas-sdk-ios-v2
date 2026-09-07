@@ -489,10 +489,14 @@ public class VerificationServiceWorker {
         // assign base url
         let baseURL = (properties["DomainURL"])!
         
-        // construct scanned url
-        urlString = baseURL + sharedURL.getPasswordlessContinueURL()
+        let trackId = incomingData.track_id.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trackId.isEmpty {
+            urlString = baseURL + sharedURL.getPrecheckContinueURL(trackId: trackId)
+        } else {
+            urlString = baseURL + sharedURL.getPasswordlessContinueURL()
+        }
         
-        // construct body params
+        // construct body params (includes track_id when set)
         var bodyParams = Dictionary<String, Any>()
         do {
             let encoder = JSONEncoder()
