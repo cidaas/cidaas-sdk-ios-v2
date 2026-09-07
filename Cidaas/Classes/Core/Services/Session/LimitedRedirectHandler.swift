@@ -44,11 +44,13 @@ final class LimitedRedirectHandler: RedirectHandler, @unchecked Sendable {
         }
 
         var next = request
+        // Always disable the jar on followed hops so URLSession cannot inject cookies
+        // when mergeIntoCookieHeader returns nil (no device id / session cookies yet).
+        next.httpShouldHandleCookies = false
         let existing = next.value(forHTTPHeaderField: "Cookie")
         let deviceId = SDKDeviceIdResolver.resolve()
         if let merged = CidaasSessionCookies.mergeIntoCookieHeader(existing, deviceId: deviceId) {
             next.setValue(merged, forHTTPHeaderField: "Cookie")
-            next.httpShouldHandleCookies = false
         }
         completion(next)
     }

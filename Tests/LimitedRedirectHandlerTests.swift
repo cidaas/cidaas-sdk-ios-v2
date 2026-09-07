@@ -59,4 +59,26 @@ final class LimitedRedirectHandlerTests: XCTestCase {
         XCTAssertFalse(LimitedRedirectHandler.isHTTPURL(URL(string: "myapp://callback")))
         XCTAssertFalse(LimitedRedirectHandler.isHTTPURL(nil))
     }
+
+    func testFollowedRedirectDisablesCookieJarEvenWithoutMergedCookies() {
+        CidaasSessionCookies.clear()
+        let handler = LimitedRedirectHandler(maxRedirects: 2)
+        let response = HTTPURLResponse(
+            url: URL(string: "https://example.com/a")!,
+            statusCode: 302,
+            httpVersion: nil,
+            headerFields: ["Location": "https://example.com/b"]
+        )!
+        var next = URLRequest(url: URL(string: "https://example.com/b")!)
+        next.httpShouldHandleCookies = true
+        let exp = expectation(description: "jar-disabled")
+
+        handler.task(URLSession.shared.dataTask(with: next), willBeRedirectedTo: next, for: response) { req in
+            XCTAssertNotNil(req)
+            XCTAssertFalse(req!.httpShouldHandleCookies)
+            exp.fulfill()
+        }
+
+        wait(for: [exp], timeout: 1)
+    }
 }
