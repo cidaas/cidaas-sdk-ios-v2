@@ -46,6 +46,7 @@ public class SafariAuthenticationSession<T> : AuthSession<T>, ASWebAuthenticatio
             
             if T.self == Bool.self {
                 DBHelper.shared.removeAccessToken(sub: sub)
+                CidaasSessionCookies.clear()
                 CidaasHTTPProofToken.clearPersistedDpopBinding()
             }
             

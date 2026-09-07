@@ -27,7 +27,7 @@ public class AuthenticateRequest: Codable {
     public var attestation: String = ""
     
     private enum CodingKeys: String, CodingKey {
-        case sub, exchange_id, push_id, device_id, client_id, pass_code, password, attempt, usage_type, request_id, single_factor_auth, attestation
+        case sub, exchange_id, push_id, device_id, client_id, pass_code, password, attempt, usage_type, request_id, attestation, single_factor_auth
     }
 }
 

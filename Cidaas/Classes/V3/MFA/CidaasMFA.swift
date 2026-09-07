@@ -401,26 +401,30 @@ public final class CidaasMFAAuthenticationBuilder {
     }
 
     /// Sends required `Cookie: cidaas_dr=<deviceId>` (same as authz `requestId`).
-    /// Pass `singleFactorAuth` when initiate used it (defaults to the value cached on this builder session).
+    /// Pass values from `initiation()` when calling on a new `mfa(type)` builder (session is not shared across builders).
     public func verification(
         exchangeId: String? = nil,
+        sub: String? = nil,
         otp: String? = nil,
         password: String? = nil,
         pattern: String? = nil,
         pushNumber: String? = nil,
         requestId: String? = nil,
         usageType: String? = nil,
-        singleFactorAuth: Bool? = nil,
         photo: UIImage = UIImage(),
         attempt: Int = 0,
         localizedReason: String = "Authenticate",
+        singleFactorAuth: Bool = false,
         completion: @escaping (Result<AuthenticateResponse>) -> Void
     ) {
-        let resolvedExchange = exchangeId ?? session.cachedExchangeId ?? ""
-        let resolvedSub = session.cachedSub ?? ""
-        let resolvedRequestId = requestId ?? session.cachedRequestId ?? ""
-        let resolvedUsageType = usageType ?? session.cachedUsageType ?? ""
-        let resolvedSingleFactorAuth = singleFactorAuth ?? session.cachedSingleFactorAuth
+        let resolvedExchange = (exchangeId ?? session.cachedExchangeId ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let explicitSub = (sub ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedSub = !explicitSub.isEmpty ? explicitSub : (session.cachedSub ?? "")
+        let resolvedRequestId = (requestId ?? session.cachedRequestId ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedUsageType = (usageType ?? session.cachedUsageType ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolvedExchange.isEmpty,
               !resolvedSub.isEmpty,
               !resolvedRequestId.isEmpty,
@@ -443,12 +447,12 @@ public final class CidaasMFAAuthenticationBuilder {
         auth.exchange_id = resolvedExchange
         auth.request_id = resolvedRequestId
         auth.usage_type = resolvedUsageType
-        auth.single_factor_auth = resolvedSingleFactorAuth
         auth.applyVerificationCredential(verificationType: verificationType, value: passCode)
         auth.attempt = attempt
         auth.localizedReason = localizedReason
         auth.device_id = MFA.deviceId()
         auth.push_id = MFA.pushId()
+        auth.single_factor_auth = singleFactorAuth
 
         VerificationViewController.shared.authenticate(
             verificationType: verificationType,
@@ -509,6 +513,78 @@ public final class CidaasMFAAuthenticationBuilder {
                 }
                 AccessTokenController.shared.getAccessToken(code: code) { tokenResult in
                     MFA.onMain { completion(tokenResult) }
+                }
+            }
+        }
+    }
+
+    /// Same flow as ``continueLogin(authenticateResponse:requestId:sub:completion:)`` but returns
+    /// ``InitLoginResult`` (`.loggedIn` / `.mfaRequired`) like ``CidaasPublicBuilder/initLogin``.
+    /// Use this when continue-login prechecks can return `data.error == mfa_required`.
+    public func continueLogin(
+        authenticateResponse: AuthenticateResponse? = nil,
+        requestId: String? = nil,
+        sub: String? = nil,
+        completion: @escaping (Result<InitLoginResult>) -> Void
+    ) {
+        let resolvedStatusId = (authenticateResponse?.data.status_id
+            ?? session.cachedStatusId
+            ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let responseSub = (authenticateResponse?.data.sub ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let explicitSub = (sub ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedSub = !responseSub.isEmpty
+            ? responseSub
+            : (!explicitSub.isEmpty ? explicitSub : (session.cachedSub ?? ""))
+        let resolvedRequestId = (requestId ?? session.cachedRequestId ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !resolvedStatusId.isEmpty, !resolvedSub.isEmpty, !resolvedRequestId.isEmpty else {
+            MFA.fail(
+                "status_id, sub, and requestId are required after verification",
+                completion: completion
+            )
+            return
+        }
+
+        let req = PasswordlessRequest()
+        req.sub = resolvedSub
+        req.requestId = resolvedRequestId
+        req.status_id = resolvedStatusId
+        req.verificationType = verificationType
+        req.device_id = MFA.deviceId()
+        req.push_id = MFA.pushId()
+
+        VerificationInteractor.shared.passwordlessContinue(incomingData: req) { result in
+            switch result {
+            case .failure(error: let error):
+                if let challenge = ContinueLoginChallengeParser.parse(from: error), challenge.isMFARequired {
+                    PreloginMFARequiredResolver.fetch(
+                        trackId: challenge.trackId,
+                        requestId: challenge.requestId.isEmpty ? resolvedRequestId : challenge.requestId,
+                        sub: challenge.sub.isEmpty ? resolvedSub : challenge.sub
+                    ) { mfaResult in
+                        switch mfaResult {
+                        case .failure(error: let mfaError):
+                            MFA.onMain { completion(.failure(error: mfaError)) }
+                        case .success(result: let mfa):
+                            MFA.onMain { completion(.success(result: .mfaRequired(mfa))) }
+                        }
+                    }
+                    return
+                }
+                MFA.onMain { completion(.failure(error: error)) }
+            case .success(result: let authz):
+                let code = authz.data.code.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !code.isEmpty else {
+                    MFA.fail("login continue returned empty authorization code", completion: completion)
+                    return
+                }
+                AccessTokenController.shared.getAccessToken(code: code) { tokenResult in
+                    switch tokenResult {
+                    case .failure(error: let tokenError):
+                        MFA.onMain { completion(.failure(error: tokenError)) }
+                    case .success(result: let login):
+                        MFA.onMain { completion(.success(result: .loggedIn(login))) }
+                    }
                 }
             }
         }
@@ -650,7 +726,7 @@ public final class CidaasMFAAuthenticationBuilder {
 
 // MARK: - Private helpers
 
-private enum MFA {
+public enum MFA {
     static func onMain(_ block: @escaping () -> Void) {
         if Thread.isMainThread {
             block()

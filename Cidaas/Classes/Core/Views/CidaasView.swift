@@ -387,6 +387,7 @@ public class CidaasView: UIView, WKNavigationDelegate {
     func clearCookies() {
         // clear all cookies
         HTTPCookieStorage.shared.removeCookies(since: Date.distantPast)
+        CidaasSessionCookies.clear()
         print("[WebCacheCleaner] All cookies deleted")
         
         WKWebsiteDataStore.default().fetchDataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()) { (records) in

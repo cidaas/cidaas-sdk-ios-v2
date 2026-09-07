@@ -29,9 +29,25 @@ public final class CidaasDevicesBuilder {
         }
     }
 
+    /// Configured MFA methods for the user on this device (`sub` + current `device_id` / `push_id`).
+    public func configurations(sub: String, completion: @escaping (Result<MFAListResponse>) -> Void) {
+        let resolvedSub = sub.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !resolvedSub.isEmpty else {
+            MFA.fail("sub is required", completion: completion)
+            return
+        }
+        let req = MFAListRequest()
+        req.sub = resolvedSub
+        req.device_id = MFA.deviceId()
+        req.push_id = MFA.pushId()
+        VerificationViewController.shared.getConfiguredList(incomingData: req) { result in
+            MFA.onMain { completion(result) }
+        }
+    }
+
     /// Lists enrolled verification methods on this or a linked device (`POST /verification-actions-srv/setup/devices`).
     /// Set `linked_device_id` on the request to query another device.
-    public func enrolledMethods(
+    public func configurations(
         incomingData: MFAListRequest,
         completion: @escaping (Result<MFAListResponse>) -> Void
     ) {

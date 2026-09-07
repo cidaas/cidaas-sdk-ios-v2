@@ -19,7 +19,7 @@ enum DeviceRegistrationAppAttest {
         NSError(
             domain: "CidaasDeviceRegistration",
             code: 10,
-            userInfo: [NSLocalizedDescriptionKey: "App Attest is not supported on this device or environment."]
+            userInfo: [NSLocalizedDescriptionKey: "App Attest is not supported on this device or environment (iOS Simulator does not support App Attest)."]
         )
     }
 
