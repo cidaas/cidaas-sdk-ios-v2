@@ -28,6 +28,8 @@ public class InitiateResponseData: Codable {
     public var status_id: String = ""
     public var exchange_id : ExchangeIdResponse = ExchangeIdResponse()
     public var push_selected_number: String = ""
+    /// Present for FIDO2 / passkey authentication initiation.
+    public var fido2_entity: Fido2Entity?
     
     public init() {
         
@@ -39,6 +41,7 @@ public class InitiateResponseData: Codable {
         case status_id
         case exchange_id
         case push_selected_number
+        case fido2_entity
     }
     
     public required init(from decoder: Decoder) throws {
@@ -48,5 +51,6 @@ public class InitiateResponseData: Codable {
         self.status_id = try container.decodeIfPresent(String.self, forKey: .status_id) ?? ""
         self.exchange_id = try container.decodeIfPresent(ExchangeIdResponse.self, forKey: .exchange_id) ?? ExchangeIdResponse()
         self.push_selected_number = try container.decodeIfPresent(String.self, forKey: .push_selected_number) ?? ""
+        self.fido2_entity = try container.decodeIfPresent(Fido2Entity.self, forKey: .fido2_entity)
     }
 }

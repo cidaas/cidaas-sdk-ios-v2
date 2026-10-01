@@ -39,6 +39,7 @@ public enum CidaasMFAVerificationType: String, CaseIterable {
     case ivr = "IVR"
     case backupCode = "BACKUPCODE"
     case password = "PASSWORD"
+    case fido2 = "FIDO2"
 }
 
 public struct CidaasMFAEnrollmentInitiationResult {
@@ -47,6 +48,8 @@ public struct CidaasMFAEnrollmentInitiationResult {
     public let statusId: String
     public let totpSecret: String?
     public let pushSelectedNumber: String?
+    /// Present for FIDO2 / passkey enrolment initiation.
+    public let fido2Entity: Fido2Entity?
 }
 
 public struct CidaasMFAEnrollmentScannedResult {
@@ -81,6 +84,7 @@ public struct CidaasMFAAuthenticationInitiationResult {
     public let exchangeId: String
     public let statusId: String
     public let pushSelectedNumber: String?
+    public let fido2Entity: Fido2Entity?
 }
 
 // MARK: - Session state (authentication only)
@@ -162,6 +166,9 @@ public final class CidaasMFAEnrollmentBuilder {
         req.sub = sub
         req.device_id = MFA.deviceId()
         req.push_id = MFA.pushId()
+        if verificationType == VerificationTypes.FIDO2.rawValue {
+            req.domainURL = MFA.domainURL()
+        }
 
         VerificationViewController.shared.setup(verificationType: verificationType, incomingData: req) { result in
             switch result {
@@ -176,7 +183,8 @@ public final class CidaasMFAEnrollmentBuilder {
                     setupExchangeId: setupExchangeId,
                     statusId: resp.data.status_id,
                     totpSecret: totpSecret,
-                    pushSelectedNumber: pushSelected.isEmpty ? nil : pushSelected
+                    pushSelectedNumber: pushSelected.isEmpty ? nil : pushSelected,
+                    fido2Entity: resp.data.fido2_entity
                 )
                 MFA.onMain { completion(.success(result: value)) }
             }
@@ -265,11 +273,32 @@ public final class CidaasMFAEnrollmentBuilder {
         photo: UIImage = UIImage(),
         attempt: Int = 0,
         localizedReason: String = "Authenticate",
+        fido2ClientResponse: Fido2ClientResponse? = nil,
         completion: @escaping (Result<EnrollResponse>) -> Void
     ) {
         let resolvedExchange = exchangeId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !resolvedExchange.isEmpty else {
             MFA.fail("exchangeId is required", completion: completion)
+            return
+        }
+        if verificationType == VerificationTypes.FIDO2.rawValue {
+            guard let fido2ClientResponse else {
+                MFA.fail("fido2ClientResponse is required for FIDO2 enrollment verification", completion: completion)
+                return
+            }
+            let enroll = EnrollRequest()
+            enroll.exchange_id = resolvedExchange
+            enroll.fido2_client_response = fido2ClientResponse
+            enroll.device_id = MFA.deviceId()
+            enroll.push_id = MFA.pushId()
+            VerificationViewController.shared.enroll(
+                verificationType: verificationType,
+                photo: photo,
+                voice: Data(),
+                incomingData: enroll
+            ) { result in
+                MFA.onMain { completion(result) }
+            }
             return
         }
         guard let passCode = MFAPassCode.resolve(
@@ -297,6 +326,57 @@ public final class CidaasMFAEnrollmentBuilder {
             incomingData: enroll
         ) { result in
             MFA.onMain { completion(result) }
+        }
+    }
+
+    /// One-shot FIDO2 / passkey enrolment: initiation → platform passkey create → verification.
+    /// Requires Associated Domains `webcredentials:<rp.id>` matching `fido2_entity.server_challenge`.
+    @available(iOS 15.0, *)
+    public func passkey(
+        presenting viewController: UIViewController,
+        accessToken: String = "",
+        sub: String = "",
+        completion: @escaping (Result<EnrollResponse>) -> Void
+    ) {
+        guard verificationType == VerificationTypes.FIDO2.rawValue else {
+            MFA.fail("passkey enrollment is only supported for FIDO2", completion: completion)
+            return
+        }
+        initiation(accessToken: accessToken, sub: sub) { initResult in
+            switch initResult {
+            case .failure(let error):
+                MFA.onMain { completion(.failure(error: error)) }
+            case .success(let initiation):
+                guard let fido2 = initiation.fido2Entity,
+                      !fido2.fidoRequestId.isEmpty,
+                      !fido2.server_challenge.challenge.isEmpty else {
+                    MFA.fail("fido2_entity.server_challenge missing from FIDO2 setup response", completion: completion)
+                    return
+                }
+                if let reason = PasskeyCredentialHelper.enrollmentBlockedReason(
+                    serverChallenge: fido2.server_challenge
+                ) {
+                    MFA.fail(reason, completion: completion)
+                    return
+                }
+                PasskeyCredentialHelper.shared.createCredential(
+                    serverChallenge: fido2.server_challenge,
+                    fidoRequestId: fido2.fidoRequestId,
+                    presenting: viewController
+                ) { passkeyResult in
+                    switch passkeyResult {
+                    case .failure(let error):
+                        let webError = (error as? WebAuthError) ?? MFA.validationError(error.localizedDescription)
+                        MFA.onMain { completion(.failure(error: webError)) }
+                    case .success(let clientResponse):
+                        self.verification(
+                            exchangeId: initiation.setupExchangeId,
+                            fido2ClientResponse: clientResponse,
+                            completion: completion
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -366,6 +446,9 @@ public final class CidaasMFAAuthenticationBuilder {
         req.device_id = MFA.deviceId()
         req.push_id = MFA.pushId()
         req.single_factor_auth = singleFactorAuth
+        if verificationType == VerificationTypes.FIDO2.rawValue {
+            req.domainURL = MFA.domainURL()
+        }
 
         VerificationViewController.shared.initiate(verificationType: verificationType, incomingData: req) { [self] result in
             switch result {
@@ -393,7 +476,8 @@ public final class CidaasMFAAuthenticationBuilder {
                     maskedSub: masked,
                     exchangeId: exchangeId,
                     statusId: resp.data.status_id,
-                    pushSelectedNumber: pushSelected.isEmpty ? nil : pushSelected
+                    pushSelectedNumber: pushSelected.isEmpty ? nil : pushSelected,
+                    fido2Entity: resp.data.fido2_entity
                 )
                 MFA.onMain { completion(.success(result: value)) }
             }
@@ -415,6 +499,7 @@ public final class CidaasMFAAuthenticationBuilder {
         attempt: Int = 0,
         localizedReason: String = "Authenticate",
         singleFactorAuth: Bool = false,
+        fido2ClientResponse: Fido2ClientResponse? = nil,
         completion: @escaping (Result<AuthenticateResponse>) -> Void
     ) {
         let resolvedExchange = (exchangeId ?? session.cachedExchangeId ?? "")
@@ -432,6 +517,35 @@ public final class CidaasMFAAuthenticationBuilder {
             MFA.fail("exchangeId, sub, requestId, and usageType are required", completion: completion)
             return
         }
+
+        if verificationType == VerificationTypes.FIDO2.rawValue {
+            guard let fido2ClientResponse else {
+                MFA.fail("fido2ClientResponse is required for FIDO2 authentication verification", completion: completion)
+                return
+            }
+            let auth = AuthenticateRequest()
+            auth.sub = resolvedSub
+            auth.exchange_id = resolvedExchange
+            auth.request_id = resolvedRequestId
+            auth.usage_type = resolvedUsageType
+            auth.fido2_client_response = fido2ClientResponse
+            auth.device_id = MFA.deviceId()
+            auth.push_id = MFA.pushId()
+            auth.single_factor_auth = singleFactorAuth
+            VerificationViewController.shared.authenticate(
+                verificationType: verificationType,
+                photo: photo,
+                voice: Data(),
+                incomingData: auth
+            ) { [self] result in
+                if case .success(result: let response) = result, response.success {
+                    session.storeVerification(sub: response.data.sub, statusId: response.data.status_id)
+                }
+                MFA.onMain { completion(result) }
+            }
+            return
+        }
+
         guard let passCode = MFAPassCode.resolve(
             verificationType: verificationType,
             otp: password ?? otp,
@@ -751,6 +865,10 @@ public enum MFA {
         SDKDeviceIdResolver.resolve()
     }
 
+    static func domainURL() -> String {
+        DBHelper.shared.getPropertyFile()?["DomainURL"] ?? ""
+    }
+
     static func validationError(_ message: String) -> WebAuthError {
         WebAuthError.shared.serviceFailureException(errorCode: 417, errorMessage: message, statusCode: 417)
     }
@@ -778,7 +896,7 @@ private enum MFAPassCode {
         case VerificationTypes.PASSWORD.rawValue:
             let code = otp ?? ""
             return code.isEmpty ? nil : code
-        case VerificationTypes.TOUCH.rawValue, VerificationTypes.FACE.rawValue:
+        case VerificationTypes.TOUCH.rawValue, VerificationTypes.FACE.rawValue, VerificationTypes.FIDO2.rawValue:
             return ""
         default:
             let code = otp ?? pattern ?? ""
@@ -794,6 +912,8 @@ private enum MFAPassCode {
             return "pattern encoding is required for PATTERN"
         case VerificationTypes.PASSWORD.rawValue:
             return "password is required for PASSWORD (pass via password)"
+        case VerificationTypes.FIDO2.rawValue:
+            return "fido2ClientResponse is required for FIDO2 (assert passkey, then pass fido2ClientResponse)"
         default:
             return "otp or pattern is required"
         }
