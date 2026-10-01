@@ -19,4 +19,5 @@ public enum VerificationTypes : String {
     case IVR = "IVR"
     case BACKUPCODE = "BACKUPCODE"
     case PASSWORD = "PASSWORD"
+    case FIDO2 = "FIDO2"
 }

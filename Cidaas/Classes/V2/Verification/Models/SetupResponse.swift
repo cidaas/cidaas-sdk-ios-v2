@@ -33,6 +33,8 @@ public class SetupResponseData: Codable {
     public var authenticator_client_id: String = ""
     public var push_selected_number: String = ""
     public var totp_secret: String = ""
+    /// Present for FIDO2 / passkey enrolment initiation.
+    public var fido2_entity: Fido2Entity?
     
     public required init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -42,5 +44,6 @@ public class SetupResponseData: Codable {
         self.authenticator_client_id = try container.decodeIfPresent(String.self, forKey: .authenticator_client_id) ?? ""
         self.push_selected_number = try container.decodeIfPresent(String.self, forKey: .push_selected_number) ?? ""
         self.totp_secret = try container.decodeIfPresent(String.self, forKey: .totp_secret) ?? ""
+        self.fido2_entity = try container.decodeIfPresent(Fido2Entity.self, forKey: .fido2_entity)
     }
 }
