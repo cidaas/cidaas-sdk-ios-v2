@@ -5,17 +5,16 @@
 //  Bridges Cidaas FIDO2 `server_challenge` ↔ AuthenticationServices platform passkeys.
 //
 //  Availability:
-//  - Class / extensions: iOS 15+ (platform passkeys).
+//  - Class / extensions: iOS 16+ (Apple Passkeys / syncable platform credentials).
 //  - `#available(iOS 17.4)`: `excludedCredentials` on platform registration.
-//  - `#available(iOS 16.0)`: preferImmediatelyAvailableCredentials (assert + exclude probe).
-//  Nested checks are intentional — not redundant with the class gate.
+//  - iOS 16..<17.4: exclude probe via preferImmediatelyAvailableCredentials.
 //
 
 import Foundation
 import UIKit
 import AuthenticationServices
 
-@available(iOS 15.0, *)
+@available(iOS 16.0, *)
 public final class PasskeyCredentialHelper: NSObject {
 
     public static let shared = PasskeyCredentialHelper()
@@ -82,7 +81,7 @@ public final class PasskeyCredentialHelper: NSObject {
 
         // iOS 17.4+: OS excludeCredentials.
         // iOS 16..<17.4: probe local passkeys.
-        if !excludedDescriptors.isEmpty, #available(iOS 16.0, *), !Self.supportsRegistrationExcludedCredentials {
+        if !excludedDescriptors.isEmpty, !Self.supportsRegistrationExcludedCredentials {
             startExcludeProbe(
                 rpId: rpId,
                 challengeData: challengeData,
@@ -173,11 +172,7 @@ public final class PasskeyCredentialHelper: NSObject {
         controller.delegate = self
         controller.presentationContextProvider = self
         self.authorizationController = controller
-        if #available(iOS 16.0, *) {
-            controller.performRequests(options: .preferImmediatelyAvailableCredentials)
-        } else {
-            controller.performRequests()
-        }
+        controller.performRequests(options: .preferImmediatelyAvailableCredentials)
     }
 
     // MARK: - Registration / exclude probe
@@ -225,7 +220,6 @@ public final class PasskeyCredentialHelper: NSObject {
     }
 
     /// iOS 16..<17.4: silent assert against exclude list. Local match → already enrolled.
-    @available(iOS 16.0, *)
     private func startExcludeProbe(
         rpId: String,
         challengeData: Data,
@@ -461,7 +455,7 @@ public final class PasskeyCredentialHelper: NSObject {
     }
 }
 
-@available(iOS 15.0, *)
+@available(iOS 16.0, *)
 extension PasskeyCredentialHelper: ASAuthorizationControllerDelegate {
     public func authorizationController(
         controller: ASAuthorizationController,
@@ -593,7 +587,7 @@ extension PasskeyCredentialHelper: ASAuthorizationControllerDelegate {
     }
 }
 
-@available(iOS 15.0, *)
+@available(iOS 16.0, *)
 extension PasskeyCredentialHelper: ASAuthorizationControllerPresentationContextProviding {
     public func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
         if let presentationAnchor {

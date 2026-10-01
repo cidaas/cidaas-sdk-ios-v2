@@ -331,7 +331,8 @@ public final class CidaasMFAEnrollmentBuilder {
 
     /// One-shot FIDO2 / passkey enrolment: initiation → platform passkey create → verification.
     /// Requires Associated Domains `webcredentials:<rp.id>` matching `fido2_entity.server_challenge`.
-    @available(iOS 15.0, *)
+    /// Passkeys (syncable platform credentials) require iOS 16+; iOS 15 only had non-syncing WebAuthn platform creds.
+    @available(iOS 16.0, *)
     public func passkey(
         presenting viewController: UIViewController,
         accessToken: String = "",

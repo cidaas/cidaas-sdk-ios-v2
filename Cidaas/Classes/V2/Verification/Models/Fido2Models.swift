@@ -134,6 +134,12 @@ public class Fido2ClientResponse: Codable {
 
     public var fidoRequestId: String = ""
     public var client_response: Fido2PublicKeyCredential = Fido2PublicKeyCredential()
+
+    public required init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.fidoRequestId = try container.decodeIfPresent(String.self, forKey: .fidoRequestId) ?? ""
+        self.client_response = try container.decodeIfPresent(Fido2PublicKeyCredential.self, forKey: .client_response) ?? Fido2PublicKeyCredential()
+    }
 }
 
 public class Fido2PublicKeyCredential: Codable {
@@ -144,6 +150,15 @@ public class Fido2PublicKeyCredential: Codable {
     public var type: String = "public-key"
     public var authenticatorAttachment: String = "platform"
     public var response: Fido2AuthenticatorResponse = Fido2AuthenticatorResponse()
+
+    public required init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
+        self.rawId = try container.decodeIfPresent(String.self, forKey: .rawId) ?? ""
+        self.type = try container.decodeIfPresent(String.self, forKey: .type) ?? "public-key"
+        self.authenticatorAttachment = try container.decodeIfPresent(String.self, forKey: .authenticatorAttachment) ?? "platform"
+        self.response = try container.decodeIfPresent(Fido2AuthenticatorResponse.self, forKey: .response) ?? Fido2AuthenticatorResponse()
+    }
 }
 
 public class Fido2AuthenticatorResponse: Codable {
@@ -157,4 +172,13 @@ public class Fido2AuthenticatorResponse: Codable {
     public var authenticatorData: String?
     public var signature: String?
     public var userHandle: String?
+
+    public required init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.attestationObject = try container.decodeIfPresent(String.self, forKey: .attestationObject)
+        self.clientDataJSON = try container.decodeIfPresent(String.self, forKey: .clientDataJSON) ?? ""
+        self.authenticatorData = try container.decodeIfPresent(String.self, forKey: .authenticatorData)
+        self.signature = try container.decodeIfPresent(String.self, forKey: .signature)
+        self.userHandle = try container.decodeIfPresent(String.self, forKey: .userHandle)
+    }
 }
