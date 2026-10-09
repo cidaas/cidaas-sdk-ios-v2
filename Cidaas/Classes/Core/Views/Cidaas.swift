@@ -190,11 +190,10 @@ public class Cidaas {
         // set enable log in local
         self.ENABLE_LOG = false
 
-        // ENABLE_DPOP is not reset here — apps set `Cidaas.shared.ENABLE_DPOP = true` at start.
-        // Forcing false in init would wipe the flag if any code path re-touched shared state.
         
         // read property from file
         self.readPropertyFile()
+        DBHelper.shared.migrateStorageIfNeeded()
         
     }
     
