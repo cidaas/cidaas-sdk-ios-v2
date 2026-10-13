@@ -104,7 +104,7 @@ final class MultiClientStorageTests: XCTestCase {
 
         // Migration already marked complete — setPropertyFile will not re-copy.
         // With an active client, legacy must not be used (prevents cross-client leak).
-        var props = ["DomainURL": "https://tenant.example", "ClientId": "client-a"]
+        let props = ["DomainURL": "https://tenant.example", "ClientId": "client-a"]
         db.userDefaults.set(props, forKey: "OAuthProperty")
 
         XCTAssertTrue(db.getAccessToken(key: sub).access_token.isEmpty)

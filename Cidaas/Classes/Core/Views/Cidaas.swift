@@ -585,11 +585,14 @@ public class Cidaas {
         }
         
         // assign to access token model
-        EntityToModelConverter.shared.accessTokenEntityToAccessTokenModel(accessTokenEntity: accessTokenEntity, callback: { _ in
-            
-            AccessTokenController.shared.saveAccessToken(accessTokenEntity: accessTokenEntity, callback: callback)
-            
-        })
+        EntityToModelConverter.shared.accessTokenEntityToAccessTokenModel(accessTokenEntity: accessTokenEntity) { result in
+            switch result {
+            case .failure(let error):
+                callback(Result.failure(error: error))
+            case .success:
+                AccessTokenController.shared.saveAccessToken(accessTokenEntity: accessTokenEntity, callback: callback)
+            }
+        }
     }
 
     

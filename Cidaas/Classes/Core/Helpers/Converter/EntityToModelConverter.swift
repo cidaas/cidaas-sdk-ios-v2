@@ -33,7 +33,10 @@ public class EntityToModelConverter {
     }
     
     // access token entity to model
-    public func accessTokenEntityToAccessTokenModel(accessTokenEntity : AccessTokenEntity, callback: @escaping (AccessTokenModel)-> Void) {
+    public func accessTokenEntityToAccessTokenModel(
+        accessTokenEntity: AccessTokenEntity,
+        callback: @escaping (Result<AccessTokenModel>) -> Void
+    ) {
         let salt = randomString(length: 16)
         let key = randomString(length: 16)
         let encData = (salt + "," + key).data(using: .utf8)!
@@ -45,6 +48,7 @@ public class EntityToModelConverter {
         do {
             AccessTokenModel.shared.refresh_token = try accessTokenEntity.refresh_token.aesEncrypt(key: key, iv: salt)
             AccessTokenModel.shared.access_token = try accessTokenEntity.access_token.aesEncrypt(key: key, iv: salt)
+            callback(Result.success(result: AccessTokenModel.shared))
         } catch {
             logw(
                 "accessTokenEntityToAccessTokenModel encrypt failed: \(error.localizedDescription)",
@@ -52,8 +56,13 @@ public class EntityToModelConverter {
             )
             AccessTokenModel.shared.refresh_token = ""
             AccessTokenModel.shared.access_token = ""
+            let authError = WebAuthError.shared.serviceFailureException(
+                errorCode: 417,
+                errorMessage: "Failed to encrypt access token for local storage",
+                statusCode: 417
+            )
+            callback(Result.failure(error: authError))
         }
-        callback(AccessTokenModel.shared)
     }
     
     // access token model to entity
