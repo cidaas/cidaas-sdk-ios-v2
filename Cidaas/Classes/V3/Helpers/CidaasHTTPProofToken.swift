@@ -8,8 +8,6 @@ import Foundation
 /// DPoP proof headers for SDK HTTP calls.
 /// Sending is driven by ``Cidaas/ENABLE_DPOP`` and/or a persisted DPoP-bound session.
 enum CidaasHTTPProofToken {
-    private static let persistedBindingKey = "com.cidaas.sdk.dpop.bound"
-
     /// Whether the global DPoP flag is on.
     static var isEnabled: Bool {
         Cidaas.shared.ENABLE_DPOP
@@ -19,7 +17,7 @@ enum CidaasHTTPProofToken {
     /// Used so refresh (and other calls) still send `DPoP` if the session is bound
     /// even when ``Cidaas/ENABLE_DPOP`` is temporarily off (e.g. upgrade / flag not set yet).
     static var hasPersistedDpopBinding: Bool {
-        UserDefaults.standard.bool(forKey: persistedBindingKey)
+        DBHelper.shared.getDpopBound()
     }
 
     /// Send a fresh `DPoP` proof when the global flag is on **or** the current session is DPoP-bound.
@@ -30,11 +28,11 @@ enum CidaasHTTPProofToken {
 
     /// Remember whether the saved token is DPoP-bound so later refresh can still attach `DPoP`.
     static func persistDpopBindingIfNeeded(from entity: AccessTokenEntity) {
-        UserDefaults.standard.set(isDpopBound(entity), forKey: persistedBindingKey)
+        DBHelper.shared.setDpopBound(isDpopBound(entity))
     }
 
     static func clearPersistedDpopBinding() {
-        UserDefaults.standard.removeObject(forKey: persistedBindingKey)
+        DBHelper.shared.clearDpopBound()
     }
 
     static func isDpopBound(_ entity: AccessTokenEntity) -> Bool {

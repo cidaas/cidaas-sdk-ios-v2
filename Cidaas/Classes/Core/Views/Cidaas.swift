@@ -190,11 +190,17 @@ public class Cidaas {
         // set enable log in local
         self.ENABLE_LOG = false
 
-        // ENABLE_DPOP is not reset here — apps set `Cidaas.shared.ENABLE_DPOP = true` at start.
-        // Forcing false in init would wipe the flag if any code path re-touched shared state.
         
-        // read property from file
-        self.readPropertyFile()
+        // Auto-load plist only when config is not driven by setURL (setURL takes precedence).
+        if DBHelper.shared.prefersSetURLConfig() {
+            logw(
+                "Skipping Cidaas.plist auto-load: active config source is setURL",
+                cname: "cidaas-sdk-info-log"
+            )
+        } else {
+            self.readPropertyFile()
+        }
+        DBHelper.shared.migrateStorageIfNeeded()
         
     }
     
@@ -215,7 +221,7 @@ public class Cidaas {
                 logw(loggerMessage, cname: "cidaas-sdk-success-log")
                 
                 
-                self.saveProperties(properties: properties) {
+                self.saveProperties(properties: properties, configSource: .plist) {
                     switch $0 {
                     case .failure (let error):
                         // log error
@@ -252,7 +258,7 @@ public class Cidaas {
                 logw(loggerMessage, cname: "cidaas-sdk-success-log")
                 
                 
-                self.saveProperties(properties: properties) {
+                self.saveProperties(properties: properties, configSource: .setURL) {
                     switch $0 {
                     case .failure (let error):
                         // log error
@@ -579,11 +585,14 @@ public class Cidaas {
         }
         
         // assign to access token model
-        EntityToModelConverter.shared.accessTokenEntityToAccessTokenModel(accessTokenEntity: accessTokenEntity, callback: { _ in
-            
-            AccessTokenController.shared.saveAccessToken(accessTokenEntity: accessTokenEntity, callback: callback)
-            
-        })
+        EntityToModelConverter.shared.accessTokenEntityToAccessTokenModel(accessTokenEntity: accessTokenEntity) { result in
+            switch result {
+            case .failure(let error):
+                callback(Result.failure(error: error))
+            case .success:
+                AccessTokenController.shared.saveAccessToken(accessTokenEntity: accessTokenEntity, callback: callback)
+            }
+        }
     }
 
     
@@ -603,7 +612,11 @@ public class Cidaas {
 
     
     // save properties
-    func saveProperties(properties: Dictionary<String, String>, callback:@escaping (Result<Bool>) -> Void) {
+    func saveProperties(
+        properties: Dictionary<String, String>,
+        configSource: CidaasConfigSource? = nil,
+        callback: @escaping (Result<Bool>) -> Void
+    ) {
         var savedProperties = properties
         
         if self.enablePkce == false {
@@ -647,6 +660,9 @@ public class Cidaas {
         
         // save local
         DBHelper.shared.setPropertyFile(properties: savedProperties)
+        if let configSource {
+            DBHelper.shared.setConfigSource(configSource)
+        }
         
         DispatchQueue.main.async {
             callback(Result.success(result: true))

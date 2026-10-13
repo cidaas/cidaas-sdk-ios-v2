@@ -55,11 +55,16 @@ public class AccessTokenController {
                 logw(loggerMessage, cname: "cidaas-sdk-success-log")
                 
                 // assign to access token model
-                EntityToModelConverter.shared.accessTokenEntityToAccessTokenModel(accessTokenEntity: accessTokenEntity, callback: { _ in
-                    
-                    self.saveAccessToken(accessTokenEntity: accessTokenEntity, callback: callback)
-                    
-                })
+                EntityToModelConverter.shared.accessTokenEntityToAccessTokenModel(accessTokenEntity: accessTokenEntity) { result in
+                    switch result {
+                    case .failure(let error):
+                        DispatchQueue.main.async {
+                            callback(Result.failure(error: error))
+                        }
+                    case .success:
+                        self.saveAccessToken(accessTokenEntity: accessTokenEntity, callback: callback)
+                    }
+                }
             }
         }
     }
@@ -145,11 +150,16 @@ public class AccessTokenController {
                 logw(loggerMessage, cname: "cidaas-sdk-success-log")
                 
                 // assign to access token model
-                EntityToModelConverter.shared.accessTokenEntityToAccessTokenModel(accessTokenEntity: accessTokenEntity, callback: { _ in
-                    
-                    self.saveAccessToken(accessTokenEntity: accessTokenEntity, callback: callback)
-                    
-                })
+                EntityToModelConverter.shared.accessTokenEntityToAccessTokenModel(accessTokenEntity: accessTokenEntity) { result in
+                    switch result {
+                    case .failure(let error):
+                        DispatchQueue.main.async {
+                            callback(Result.failure(error: error))
+                        }
+                    case .success:
+                        self.saveAccessToken(accessTokenEntity: accessTokenEntity, callback: callback)
+                    }
+                }
             }
         }
         
