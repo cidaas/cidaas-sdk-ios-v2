@@ -18,6 +18,7 @@ public class DBHelper : NSObject {
     public var userDefaults = UserDefaults.standard
 
     static let propertyFileKey = "OAuthProperty"
+    static let configSourceKey = "OAuthConfigSource"
     static let tokenPrefix = "cidaas_user_details_"
     static let migrationVersionKey = "OAuthStorageMigrationVersion"
     static let currentMigrationVersion = 1
@@ -87,6 +88,22 @@ public class DBHelper : NSObject {
         }
         return storage
     }
+
+    /// Records whether the active config came from plist or `setURL`.
+    public func setConfigSource(_ source: CidaasConfigSource, key: String = "OAuthConfigSource") {
+        userDefaults.set(source.rawValue, forKey: key)
+        userDefaults.synchronize()
+    }
+
+    public func getConfigSource(key: String = "OAuthConfigSource") -> CidaasConfigSource? {
+        guard let raw = userDefaults.string(forKey: key) else { return nil }
+        return CidaasConfigSource(rawValue: raw)
+    }
+
+    /// When true, auto plist load on SDK init is skipped so `setURL` keeps precedence.
+    public func prefersSetURLConfig() -> Bool {
+        getConfigSource() == .setURL
+    }
     
     // set enable log
     public func setEnableLog(enableLog : Bool, key : String = "OAuthEnableLog") {
@@ -132,7 +149,7 @@ public class DBHelper : NSObject {
             cname: "cidaas-sdk-info-log"
         )
         logw(
-            "Flags: tokenStorage=\(getTokenStorage().rawValue), pkce=\(getEnablePkce()), dpop=\(getEnableDpop()), deviceRegCompleted=\(getDeviceRegistrationCompleted()), fcm=\(redactedSecret(getFCM())), migrationVersion=\(userDefaults.integer(forKey: Self.migrationVersionKey))",
+            "Flags: tokenStorage=\(getTokenStorage().rawValue), configSource=\(getConfigSource()?.rawValue ?? "nil"), pkce=\(getEnablePkce()), dpop=\(getEnableDpop()), deviceRegCompleted=\(getDeviceRegistrationCompleted()), fcm=\(redactedSecret(getFCM())), migrationVersion=\(userDefaults.integer(forKey: Self.migrationVersionKey))",
             cname: "cidaas-sdk-info-log"
         )
 
@@ -205,9 +222,7 @@ public class DBHelper : NSObject {
     public func getEnableDpop(key: String = "OAuthEnableDpop") -> Bool {
         if key == Self.dpopEnableKey, let ctx = activeTenantAndClient() {
             let instanceKey = instanceFlagKey(Self.dpopEnableKey, tenant: ctx.tenant, clientId: ctx.clientId)
-            if let value = userDefaults.object(forKey: instanceKey) as? Bool {
-                return value
-            }
+            return (userDefaults.object(forKey: instanceKey) as? Bool) ?? false
         }
         return ((userDefaults.object(forKey: key) ?? false) as? Bool) ?? false
     }
@@ -224,9 +239,7 @@ public class DBHelper : NSObject {
     public func getDeviceRegistrationCompleted(key: String = "OAuthDeviceRegistrationCompleted") -> Bool {
         if key == Self.deviceRegKey, let ctx = activeTenantAndClient() {
             let instanceKey = instanceFlagKey(Self.deviceRegKey, tenant: ctx.tenant, clientId: ctx.clientId)
-            if let value = userDefaults.object(forKey: instanceKey) as? Bool {
-                return value
-            }
+            return (userDefaults.object(forKey: instanceKey) as? Bool) ?? false
         }
         return ((userDefaults.object(forKey: key) ?? false) as? Bool) ?? false
     }
@@ -243,9 +256,7 @@ public class DBHelper : NSObject {
     public func getDpopBound() -> Bool {
         if let ctx = activeTenantAndClient() {
             let instanceKey = instanceFlagKey(Self.dpopBoundLegacyKey, tenant: ctx.tenant, clientId: ctx.clientId)
-            if userDefaults.object(forKey: instanceKey) != nil {
-                return userDefaults.bool(forKey: instanceKey)
-            }
+            return (userDefaults.object(forKey: instanceKey) as? Bool) ?? false
         }
         return userDefaults.bool(forKey: Self.dpopBoundLegacyKey)
     }
@@ -374,7 +385,7 @@ public class DBHelper : NSObject {
         }
     }
     
-    // get access token from the configured store, then the other store
+    // get access token from the configured store (namespaced when tenant+client are active)
     public func getAccessToken(key : String) -> AccessTokenModel {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -382,9 +393,7 @@ public class DBHelper : NSObject {
         }
         if let ctx = activeTenantAndClient() {
             let namespaced = namespacedAccessTokenKey(sub: trimmed, tenant: ctx.tenant, clientId: ctx.clientId)
-            if let model = readAccessToken(storageKey: namespaced), !model.sub.isEmpty {
-                return model
-            }
+            return readAccessToken(storageKey: namespaced) ?? AccessTokenModel()
         }
         return readAccessToken(storageKey: legacyAccessTokenKey(sub: trimmed)) ?? AccessTokenModel()
     }
@@ -400,23 +409,35 @@ public class DBHelper : NSObject {
     }
 
     func migrateStorageIfNeeded() {
-        let version = userDefaults.integer(forKey: Self.migrationVersionKey)
-        guard version < Self.currentMigrationVersion else { return }
         guard let ctx = activeTenantAndClient() else { return }
+        let version = userDefaults.integer(forKey: Self.migrationVersionKey)
+        if version >= Self.currentMigrationVersion {
+            scrubLeftoverLegacyAccessTokenKeys()
+            return
+        }
 
-        let allKeys = userDefaults.dictionaryRepresentation().keys
+        let allKeys = Array(userDefaults.dictionaryRepresentation().keys)
         for key in allKeys where isLegacyAccessTokenKey(key) {
             let sub = String(key.dropFirst(Self.tokenPrefix.count))
             let newKey = namespacedAccessTokenKey(sub: sub, tenant: ctx.tenant, clientId: ctx.clientId)
             copyAccessTokenIfNeeded(from: key, to: newKey)
+            removeAccessToken(storageKey: key)
         }
 
-        copyBoolIfNeeded(from: Self.dpopEnableKey, to: instanceFlagKey(Self.dpopEnableKey, tenant: ctx.tenant, clientId: ctx.clientId))
-        copyBoolIfNeeded(from: Self.dpopBoundLegacyKey, to: instanceFlagKey(Self.dpopBoundLegacyKey, tenant: ctx.tenant, clientId: ctx.clientId))
-        copyBoolIfNeeded(from: Self.deviceRegKey, to: instanceFlagKey(Self.deviceRegKey, tenant: ctx.tenant, clientId: ctx.clientId))
+        let instanceDpopEnable = instanceFlagKey(Self.dpopEnableKey, tenant: ctx.tenant, clientId: ctx.clientId)
+        let instanceDpopBound = instanceFlagKey(Self.dpopBoundLegacyKey, tenant: ctx.tenant, clientId: ctx.clientId)
+        let instanceDeviceReg = instanceFlagKey(Self.deviceRegKey, tenant: ctx.tenant, clientId: ctx.clientId)
+        copyBoolIfNeeded(from: Self.dpopEnableKey, to: instanceDpopEnable)
+        copyBoolIfNeeded(from: Self.dpopBoundLegacyKey, to: instanceDpopBound)
+        copyBoolIfNeeded(from: Self.deviceRegKey, to: instanceDeviceReg)
         let legacyTotp = Self.totpBaseKey + "-totp"
         let instanceTotp = instanceFlagKey(Self.totpBaseKey, tenant: ctx.tenant, clientId: ctx.clientId) + "-totp"
         copyStringIfNeeded(from: legacyTotp, to: instanceTotp)
+
+        userDefaults.removeObject(forKey: Self.dpopEnableKey)
+        userDefaults.removeObject(forKey: Self.dpopBoundLegacyKey)
+        userDefaults.removeObject(forKey: Self.deviceRegKey)
+        userDefaults.removeObject(forKey: legacyTotp)
 
         userDefaults.set(Self.currentMigrationVersion, forKey: Self.migrationVersionKey)
         userDefaults.synchronize()
@@ -424,6 +445,19 @@ public class DBHelper : NSObject {
             "Migrated OAuth storage to v\(Self.currentMigrationVersion) for tenant \(ctx.tenant) client \(ctx.clientId)",
             cname: "cidaas-sdk-info-log"
         )
+    }
+
+    /// Removes leftover `cidaas_user_details_{sub}` rows after namespaced migration.
+    private func scrubLeftoverLegacyAccessTokenKeys() {
+        let allKeys = Array(userDefaults.dictionaryRepresentation().keys)
+        var removed = false
+        for key in allKeys where isLegacyAccessTokenKey(key) {
+            removeAccessToken(storageKey: key)
+            removed = true
+        }
+        if removed {
+            logw("Removed leftover legacy access-token keys after namespaced migration", cname: "cidaas-sdk-info-log")
+        }
     }
     
     private func writeAccessTokenString(_ access_token_string: String, storageKey: String) {

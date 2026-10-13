@@ -191,8 +191,15 @@ public class Cidaas {
         self.ENABLE_LOG = false
 
         
-        // read property from file
-        self.readPropertyFile()
+        // Auto-load plist only when config is not driven by setURL (setURL takes precedence).
+        if DBHelper.shared.prefersSetURLConfig() {
+            logw(
+                "Skipping Cidaas.plist auto-load: active config source is setURL",
+                cname: "cidaas-sdk-info-log"
+            )
+        } else {
+            self.readPropertyFile()
+        }
         DBHelper.shared.migrateStorageIfNeeded()
         
     }
@@ -214,7 +221,7 @@ public class Cidaas {
                 logw(loggerMessage, cname: "cidaas-sdk-success-log")
                 
                 
-                self.saveProperties(properties: properties) {
+                self.saveProperties(properties: properties, configSource: .plist) {
                     switch $0 {
                     case .failure (let error):
                         // log error
@@ -251,7 +258,7 @@ public class Cidaas {
                 logw(loggerMessage, cname: "cidaas-sdk-success-log")
                 
                 
-                self.saveProperties(properties: properties) {
+                self.saveProperties(properties: properties, configSource: .setURL) {
                     switch $0 {
                     case .failure (let error):
                         // log error
@@ -602,7 +609,11 @@ public class Cidaas {
 
     
     // save properties
-    func saveProperties(properties: Dictionary<String, String>, callback:@escaping (Result<Bool>) -> Void) {
+    func saveProperties(
+        properties: Dictionary<String, String>,
+        configSource: CidaasConfigSource? = nil,
+        callback: @escaping (Result<Bool>) -> Void
+    ) {
         var savedProperties = properties
         
         if self.enablePkce == false {
@@ -646,6 +657,9 @@ public class Cidaas {
         
         // save local
         DBHelper.shared.setPropertyFile(properties: savedProperties)
+        if let configSource {
+            DBHelper.shared.setConfigSource(configSource)
+        }
         
         DispatchQueue.main.async {
             callback(Result.success(result: true))

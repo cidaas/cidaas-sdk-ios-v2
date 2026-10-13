@@ -41,18 +41,17 @@ public class EntityToModelConverter {
 
         AccessTokenModel.shared.expires_in = accessTokenEntity.expires_in
         AccessTokenModel.shared.id_token = accessTokenEntity.id_token
+        AccessTokenModel.shared.sub = accessTokenEntity.sub
         do {
             AccessTokenModel.shared.refresh_token = try accessTokenEntity.refresh_token.aesEncrypt(key: key, iv: salt)
-        } catch {
-            AccessTokenModel.shared.refresh_token = accessTokenEntity.refresh_token
-        }
-        
-        AccessTokenModel.shared.sub = accessTokenEntity.sub
-        
-        do {
             AccessTokenModel.shared.access_token = try accessTokenEntity.access_token.aesEncrypt(key: key, iv: salt)
         } catch {
-            AccessTokenModel.shared.access_token = accessTokenEntity.access_token
+            logw(
+                "accessTokenEntityToAccessTokenModel encrypt failed: \(error.localizedDescription)",
+                cname: "cidaas-sdk-error-log"
+            )
+            AccessTokenModel.shared.refresh_token = ""
+            AccessTokenModel.shared.access_token = ""
         }
         callback(AccessTokenModel.shared)
     }

@@ -72,6 +72,7 @@ final class MultiClientStorageTests: XCTestCase {
 
         let namespaced = db.namespacedAccessTokenKey(sub: sub, tenant: "https://tenant.example", clientId: "client-a")
         XCTAssertNotNil(db.userDefaults.object(forKey: namespaced))
+        XCTAssertNil(db.userDefaults.object(forKey: legacy), "legacy flat key must be removed after migration")
         XCTAssertEqual(db.userDefaults.integer(forKey: DBHelper.migrationVersionKey), DBHelper.currentMigrationVersion)
     }
 
@@ -94,15 +95,59 @@ final class MultiClientStorageTests: XCTestCase {
         XCTAssertTrue(b.contains("client-b"))
     }
 
-    func testDualReadFallsBackToLegacyKeyBeforeMigrationCompletes() {
+    func testActiveClientDoesNotFallBackToLegacyToken() {
         let sub = "dual-sub"
         let encoder = JSONEncoder()
         let data = try! encoder.encode(token(sub: sub, accessToken: "from-legacy"))
         db.userDefaults.set(String(data: data, encoding: .utf8), forKey: db.legacyAccessTokenKey(sub: sub))
         db.userDefaults.set(DBHelper.currentMigrationVersion, forKey: DBHelper.migrationVersionKey)
 
+        // Migration already marked complete — setPropertyFile will not re-copy.
+        // With an active client, legacy must not be used (prevents cross-client leak).
+        var props = ["DomainURL": "https://tenant.example", "ClientId": "client-a"]
+        db.userDefaults.set(props, forKey: "OAuthProperty")
+
+        XCTAssertTrue(db.getAccessToken(key: sub).access_token.isEmpty)
+    }
+
+    func testLegacyTokenDoesNotLeakToSecondClientAfterMigration() {
+        let sub = "shared-sub"
+        let encoder = JSONEncoder()
+        let data = try! encoder.encode(token(sub: sub, accessToken: "legacy-only"))
+        db.userDefaults.set(String(data: data, encoding: .utf8), forKey: db.legacyAccessTokenKey(sub: sub))
+
         setActive(domain: "https://tenant.example", clientId: "client-a")
-        XCTAssertEqual(db.getAccessToken(key: sub).access_token, "from-legacy")
+        XCTAssertEqual(db.getAccessToken(key: sub).access_token, "legacy-only")
+
+        setActive(domain: "https://tenant.example", clientId: "client-b")
+        XCTAssertTrue(
+            db.getAccessToken(key: sub).access_token.isEmpty,
+            "client-b must not see client-a's migrated/legacy session"
+        )
+    }
+
+    func testInstanceFlagsDoNotFallBackToGlobalLegacy() {
+        // Migration already done — globals must not apply to an active client without instance keys.
+        db.userDefaults.set(DBHelper.currentMigrationVersion, forKey: DBHelper.migrationVersionKey)
+        db.userDefaults.set(true, forKey: "OAuthEnableDpop")
+        db.userDefaults.set(true, forKey: "com.cidaas.sdk.dpop.bound")
+        db.userDefaults.set(true, forKey: "OAuthDeviceRegistrationCompleted")
+
+        setActive(domain: "https://tenant.example", clientId: "client-b")
+        XCTAssertFalse(db.getEnableDpop())
+        XCTAssertFalse(db.getDpopBound())
+        XCTAssertFalse(db.getDeviceRegistrationCompleted())
+    }
+
+    func testSetURLConfigSourceTakesPrecedenceFlag() {
+        XCTAssertFalse(db.prefersSetURLConfig())
+        db.setConfigSource(.setURL)
+        XCTAssertTrue(db.prefersSetURLConfig())
+        XCTAssertEqual(db.getConfigSource(), .setURL)
+
+        db.setConfigSource(.plist)
+        XCTAssertFalse(db.prefersSetURLConfig())
+        XCTAssertEqual(db.getConfigSource(), .plist)
     }
 
     private func setActive(domain: String, clientId: String, extra: [String: String] = [:]) {
