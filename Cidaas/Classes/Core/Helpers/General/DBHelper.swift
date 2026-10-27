@@ -74,6 +74,11 @@ public class DBHelper : NSObject {
     private func instanceFlagKey(_ base: String, tenant: String, clientId: String) -> String {
         return "\(base)_\(instanceSuffix(tenant: tenant, clientId: clientId))"
     }
+
+    /// Device registration is one record per tenant. Clients on that tenant share the flag.
+    func tenantDeviceRegistrationKey(tenant: String) -> String {
+        "\(Self.deviceRegKey)_\(storageSafeSegment(normalizeTenant(tenant)))"
+    }
     
     // token storage preference (default: UserDefaults)
     public func setTokenStorage(_ storage: CidaasTokenStorage, key: String = "OAuthTokenStorage") {
@@ -229,7 +234,7 @@ public class DBHelper : NSObject {
 
     public func setDeviceRegistrationCompleted(_ completed: Bool, key: String = "OAuthDeviceRegistrationCompleted") {
         if key == Self.deviceRegKey, let ctx = activeTenantAndClient() {
-            userDefaults.set(completed, forKey: instanceFlagKey(Self.deviceRegKey, tenant: ctx.tenant, clientId: ctx.clientId))
+            userDefaults.set(completed, forKey: tenantDeviceRegistrationKey(tenant: ctx.tenant))
         } else {
             userDefaults.set(completed, forKey: key)
         }
@@ -238,8 +243,11 @@ public class DBHelper : NSObject {
 
     public func getDeviceRegistrationCompleted(key: String = "OAuthDeviceRegistrationCompleted") -> Bool {
         if key == Self.deviceRegKey, let ctx = activeTenantAndClient() {
-            let instanceKey = instanceFlagKey(Self.deviceRegKey, tenant: ctx.tenant, clientId: ctx.clientId)
-            return (userDefaults.object(forKey: instanceKey) as? Bool) ?? false
+            let tenantKey = tenantDeviceRegistrationKey(tenant: ctx.tenant)
+            if userDefaults.object(forKey: tenantKey) != nil {
+                return userDefaults.bool(forKey: tenantKey)
+            }
+            return false
         }
         return ((userDefaults.object(forKey: key) ?? false) as? Bool) ?? false
     }
@@ -426,10 +434,9 @@ public class DBHelper : NSObject {
 
         let instanceDpopEnable = instanceFlagKey(Self.dpopEnableKey, tenant: ctx.tenant, clientId: ctx.clientId)
         let instanceDpopBound = instanceFlagKey(Self.dpopBoundLegacyKey, tenant: ctx.tenant, clientId: ctx.clientId)
-        let instanceDeviceReg = instanceFlagKey(Self.deviceRegKey, tenant: ctx.tenant, clientId: ctx.clientId)
         copyBoolIfNeeded(from: Self.dpopEnableKey, to: instanceDpopEnable)
         copyBoolIfNeeded(from: Self.dpopBoundLegacyKey, to: instanceDpopBound)
-        copyBoolIfNeeded(from: Self.deviceRegKey, to: instanceDeviceReg)
+        copyBoolIfNeeded(from: Self.deviceRegKey, to: tenantDeviceRegistrationKey(tenant: ctx.tenant))
         let legacyTotp = Self.totpBaseKey + "-totp"
         let instanceTotp = instanceFlagKey(Self.totpBaseKey, tenant: ctx.tenant, clientId: ctx.clientId) + "-totp"
         copyStringIfNeeded(from: legacyTotp, to: instanceTotp)
@@ -583,6 +590,7 @@ public class DBHelper : NSObject {
         if let value = userDefaults.object(forKey: namespaced) as? String, !value.isEmpty {
             return value
         }
+        guard activeTenantAndClient() == nil else { return "" }
         let legacy = key + "-totp"
         guard let value = userDefaults.object(forKey: legacy) else {
             return ""

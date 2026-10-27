@@ -40,12 +40,6 @@ This document will guide to link the appropriate cidaas methods and services to 
 
 #### Native UI Integration
 
-#### Installation
-
-```
-pod 'Cidaas/Native'
-```
-
 #### Getting Tenant Info
 Sometimes you may want to lookup different types of login available ('Email', 'Mobile', 'Username') for a particular tenant. 
 To get the tenant information, call ****getTenantInfo()****.

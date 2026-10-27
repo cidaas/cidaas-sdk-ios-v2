@@ -79,7 +79,7 @@ public class Cidaas {
         }
     }
 
-    /// True after a successful device registration (or initiate 409). Stored in UserDefaults.
+    /// Clients on that tenant share the flag. A different `DomainURL` has its own.
     public var isDeviceRegistrationCompleted: Bool {
         get {
             DBHelper.shared.getDeviceRegistrationCompleted()

@@ -40,21 +40,46 @@ final class MultiClientStorageTests: XCTestCase {
         XCTAssertTrue(db.getAccessToken(key: sub).access_token.isEmpty)
     }
 
-    func testDpopAndDeviceRegDoNotLeakAcrossClients() {
+    func testDpopDoesNotLeakAcrossClients() {
         setActive(domain: "https://tenant.example", clientId: "client-a")
         db.setEnableDpop(enableDpop: true)
         db.setDpopBound(true)
-        db.setDeviceRegistrationCompleted(true)
 
         setActive(domain: "https://tenant.example", clientId: "client-b")
         XCTAssertFalse(db.getEnableDpop())
         XCTAssertFalse(db.getDpopBound())
-        XCTAssertFalse(db.getDeviceRegistrationCompleted())
 
         setActive(domain: "https://tenant.example", clientId: "client-a")
         XCTAssertTrue(db.getEnableDpop())
         XCTAssertTrue(db.getDpopBound())
+    }
+
+    func testDeviceRegistrationIsSharedByClientsOnTheSameTenant() {
+        setActive(domain: "https://tenant.example", clientId: "client-a")
+        db.setDeviceRegistrationCompleted(true)
+
+        setActive(domain: "https://tenant.example", clientId: "client-b")
         XCTAssertTrue(db.getDeviceRegistrationCompleted())
+
+        setActive(domain: "https://Tenant.example/", clientId: "client-c")
+        XCTAssertTrue(db.getDeviceRegistrationCompleted())
+
+        setActive(domain: "https://other.example", clientId: "client-a")
+        XCTAssertFalse(db.getDeviceRegistrationCompleted())
+    }
+
+    func testLegacyDeviceRegistrationCopiesOntoTheTenant() {
+        db.userDefaults.set(true, forKey: "OAuthDeviceRegistrationCompleted")
+
+        setActive(domain: "https://tenant.example", clientId: "client-a")
+        XCTAssertTrue(db.getDeviceRegistrationCompleted())
+        XCTAssertNil(db.userDefaults.object(forKey: "OAuthDeviceRegistrationCompleted"))
+
+        setActive(domain: "https://tenant.example", clientId: "client-b")
+        XCTAssertTrue(db.getDeviceRegistrationCompleted())
+
+        setActive(domain: "https://other.example", clientId: "client-a")
+        XCTAssertFalse(db.getDeviceRegistrationCompleted())
     }
 
     func testMigrationCopiesLegacyTokenToNamespacedKey() {
@@ -124,6 +149,14 @@ final class MultiClientStorageTests: XCTestCase {
             db.getAccessToken(key: sub).access_token.isEmpty,
             "client-b must not see client-a's migrated/legacy session"
         )
+    }
+
+    func testActiveClientDoesNotFallBackToLegacyTotp() {
+        db.userDefaults.set(DBHelper.currentMigrationVersion, forKey: DBHelper.migrationVersionKey)
+        db.userDefaults.set("otpauth://totp?secret=legacy", forKey: "OAuthTOTPSecret-totp")
+
+        setActive(domain: "https://tenant.example", clientId: "client-b")
+        XCTAssertTrue(db.getTOTPSecret().isEmpty)
     }
 
     func testInstanceFlagsDoNotFallBackToGlobalLegacy() {
